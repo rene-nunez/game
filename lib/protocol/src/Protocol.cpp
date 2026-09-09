@@ -1,4 +1,4 @@
-#include "protocol.h"
+#include "Protocol.h"
 
 bool message_handler::begin(uint8_t role) {
   if (!network::begin(role)) {
