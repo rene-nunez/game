@@ -1,8 +1,8 @@
 #include <Arduino.h>
 #include <cstring>
 
-#include <display.h>
-#include <game.h>
+#include <Display.h>
+#include <Game.h>
 
 message_handler game::_net;
 uint32_t game::_tick = 0;

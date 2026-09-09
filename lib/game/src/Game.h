@@ -4,9 +4,6 @@
 
 #include <Protocol.h>
 
-// Game orchestration. Owns the pieces (network, screen) and drives the loop.
-// main.cpp only calls begin()/update(); all game logic lives here or in
-// modules it spawns (simulation, input, rendering).
 class game {
 public:
   static bool begin(uint8_t role);

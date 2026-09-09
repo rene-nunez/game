@@ -19,7 +19,6 @@ public:
   static void clear(uint16_t color);
   static void fill_rect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color);
   static void pixel(int16_t x, int16_t y, uint16_t color);
-  static void text(const char* s, int16_t x, int16_t y, uint16_t color,
-                   uint8_t size = 1, uint16_t bg = colour::black);
+  static void text(const char* s, int16_t x, int16_t y, uint16_t color, uint8_t size = 1, uint16_t bg = colour::black);
   static uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b);
 };

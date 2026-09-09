@@ -1,5 +1,5 @@
 #include <config.h>
-#include <game.h>
+#include <Game.h>
 
 void setup() {
   game::begin(DEVICE_ROLE);

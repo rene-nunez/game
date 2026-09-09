@@ -1,13 +1,13 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 
-#include <display.h>
+#include <Display.h>
 
 static TFT_eSPI _tft;
 
 bool display::begin() {
   _tft.init();
-  _tft.setRotation(1);  // landscape 320x240
+  _tft.setRotation(1); // landscape 320x240
   _tft.fillScreen(colour::black);
   return true;
 }
