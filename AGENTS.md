@@ -1,7 +1,7 @@
 # AGENTS.md
 
 - `snake_case` everywhere
-- class instance prefixed `_`
+- class private members and instances prefixed `_`
 - read .editorconfig
 - network structs: `__attribute__((packed))`, first field is `type` always
 - authoritative host/client. Host runs game logic and send state; client sends inputs
