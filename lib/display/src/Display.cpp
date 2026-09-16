@@ -1,3 +1,4 @@
+#include <pins.h>
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 
@@ -7,6 +8,8 @@ static TFT_eSPI _tft;
 
 bool display::begin() {
   _tft.init();
+  pinMode(TFT_BL, OUTPUT);
+  digitalWrite(TFT_BL, HIGH);
   _tft.setRotation(1); // landscape 320x240
   _tft.fillScreen(colour::black);
   return true;
