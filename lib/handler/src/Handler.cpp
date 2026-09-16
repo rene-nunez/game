@@ -1,6 +1,6 @@
-#include "Protocol.h"
+#include "Handler.h"
 
-bool message_handler::begin(uint8_t role) {
+bool handler::begin(uint8_t role) {
   if (!network::begin(role)) {
     return false;
   }
@@ -12,11 +12,11 @@ bool message_handler::begin(uint8_t role) {
   return true;
 }
 
-bool message_handler::send(const void* payload, size_t len) {
+bool handler::send(const void* payload, size_t len) {
   return network::send(static_cast<const uint8_t*>(payload), len);
 }
 
-void message_handler::on_message(msg_type type, std::function<void(const uint8_t*, size_t)> callback) {
+void handler::on_message(msg_type type, std::function<void(const uint8_t*, size_t)> callback) {
   if (_handler_count >= MAX_HANDLERS) {
     return;
   }
@@ -26,11 +26,11 @@ void message_handler::on_message(msg_type type, std::function<void(const uint8_t
   ++_handler_count;
 }
 
-uint8_t message_handler::role() const {
+uint8_t handler::role() const {
   return network::role();
 }
 
-void message_handler::_dispatch(const uint8_t* data, int len) {
+void handler::_dispatch(const uint8_t* data, int len) {
   if (len < 1) {
     return;
   }

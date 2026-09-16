@@ -14,7 +14,8 @@
 - `include/pins.h` — hardware pins (TFT SPI, joystick ADC1, buttons)
 - `include/tft_setup.h` — TFT_eSPI user setup (auto-loaded via `__has_include(<tft_setup.h>)`; defines pin macros from `pins.h`)
 - `lib/network/src/Network.{h,cpp}` — static class `network`: raw ESP-NOW transport, no message knowledge
-- `lib/protocol/src/Protocol.{h,cpp}` — `message_handler`: `msg_type`, packed structs, routing
+- `lib/protocol/src/Protocol.h` — wire format, header-only: `msg_type`, packed structs
+- `lib/handler/src/Handler.{h,cpp}` — class `handler`: typed routing/dispatch on top of `network`
 - `lib/display/src/Display.{h,cpp}` — static class `display` + namespace `colour`; TFT_eSPI visible only here
 - `lib/input/src/Input.{h,cpp}` — static class `input`: joystick (ADC1) + buttons with debounce and edge detection
 - `lib/game/src/Game.{h,cpp}` — static class `game`: owns pieces, drives the loop
@@ -26,5 +27,5 @@
 
 - add `msg_type` value in `lib/protocol/src/Protocol.h`
 - define packed struct with `type` first in the same header
-- register `game::_net.on_message(type, cb)` in `lib/game/src/game.cpp` for now
+- register `game::_net.on_message(type, cb)` in `lib/game/src/Game.cpp` for now
 - send with `_net.send(&msg, sizeof(msg))`
