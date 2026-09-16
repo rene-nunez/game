@@ -11,14 +11,16 @@
 ## Layout
 
 - `include/config.h` — role validation only
-- `include/pins.h` — hardware pins
-- `include/tft.h` — TFT_eSPI user setup (loaded via `TFT_ESPI_USER_SETUP_PATH`)
+- `include/pins.h` — hardware pins (TFT SPI, joystick ADC1, buttons)
+- `include/tft_setup.h` — TFT_eSPI user setup (auto-loaded via `__has_include(<tft_setup.h>)`; defines pin macros from `pins.h`)
 - `lib/network/src/Network.{h,cpp}` — static class `network`: raw ESP-NOW transport, no message knowledge
 - `lib/protocol/src/Protocol.{h,cpp}` — `message_handler`: `msg_type`, packed structs, routing
-- `lib/display/src/display.{h,cpp}` — static class `display` + namespace `colour`; TFT_eSPI visible only here
-- `lib/game/src/game.{h,cpp}` — static class `game`: owns pieces, drives the loop
+- `lib/display/src/Display.{h,cpp}` — static class `display` + namespace `colour`; TFT_eSPI visible only here
+- `lib/input/src/Input.{h,cpp}` — static class `input`: joystick (ADC1) + buttons with debounce and edge detection
+- `lib/game/src/Game.{h,cpp}` — static class `game`: owns pieces, drives the loop
 - `src/main.cpp` — bootstrap only: `game::begin(DEVICE_ROLE)` + `game::update()`
 - project libs see each other via LDF `chain` (follows `#include`); no extra build flags. Filenames are case-sensitive on Linux (`Protocol.h`, `Network.h`)
+- microSD (future): scores persisted per player via ArduinoJson; hardware not yet integrated
 
 ## To add a new message
 
