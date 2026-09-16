@@ -13,7 +13,7 @@ enum class msg_type : uint8_t {
   player_input = 0x10,
 };
 
-// Payload of a heartbeat is 8 bytes total
+// payload of a heartbeat is 8 bytes total
 struct __attribute__((packed)) heartbeat_msg {
   msg_type type = msg_type::heartbeat;
   uint32_t tick = 0;
