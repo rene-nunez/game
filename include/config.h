@@ -1,5 +1,5 @@
 #pragma once
 
-// Set the role of this ESP32 before flashing
-// Change this line to ROLE_CLIENT to flash the other board
-#define DEVICE_ROLE ROLE_HOST
+#ifndef DEVICE_ROLE
+  #error "DEVICE_ROLE not defined: use `pio run -e host` or `pio run -e client`"
+#endif

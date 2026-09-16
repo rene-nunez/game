@@ -4,13 +4,13 @@
 - read .editorconfig
 - network structs: `__attribute__((packed))`, first field is `type` always
 - authoritative host/client. Host runs game logic and sends state; client sends inputs
-- role is a static (network), toggle only in `include/config.h` (`DEVICE_ROLE`)
+- role is a static (network), chosen per environment: `pio run -e host` or `pio run -e client` (`DEVICE_ROLE` build flag); `include/config.h` only validates it
 - fixed custom MACs; role picks peer
 - ESP-NOW limit: 250 bytes/msg. For frequent state use binary, not JSON
 
 ## Layout
 
-- `include/config.h` — role only
+- `include/config.h` — role validation only
 - `include/pins.h` — hardware pins
 - `include/tft.h` — TFT_eSPI user setup (loaded via `TFT_ESPI_USER_SETUP_PATH`)
 - `lib/network/src/Network.{h,cpp}` — static class `network`: raw ESP-NOW transport, no message knowledge
