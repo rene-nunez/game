@@ -24,15 +24,18 @@ bool network::begin(uint8_t role) {
     return false;
   }
 
-  esp_wifi_set_channel(WIFI_CHANNEL, WIFI_SECOND_CHAN_NONE);
+  if (esp_wifi_set_channel(WIFI_CHANNEL, WIFI_SECOND_CHAN_NONE) != ESP_OK) {
+    Serial.println("[network] failed to set custom wifi channel");
+    return false;
+  }
 
   if (esp_now_init() != ESP_OK) {
     Serial.println("[network] esp_now_init failed");
     return false;
   }
 
-  esp_now_register_send_cb(_on_sent);
-  esp_now_register_recv_cb(_on_received);
+  esp_now_register_send_cb(_on_sent); // send callback
+  esp_now_register_recv_cb(_on_received); // receive callback
 
   if (!_add_peer()) {
     Serial.println("[network] failed to add peer");
