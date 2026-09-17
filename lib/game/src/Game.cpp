@@ -99,4 +99,8 @@ void game::_render() {
 
   display::fill_rect(8, 124, 10, 10, input::fire_down() ? colour::red : colour::black);
   display::text("F", 10, 124, input::fire_down() ? colour::white : colour::blue, 1);
+
+  // interact button indicator (green = held, empty = off)
+  display::fill_rect(24, 124, 10, 10, input::interact_down() ? colour::green : colour::black);
+  display::text("E", 26, 124, input::interact_down() ? colour::white : colour::green, 1);
 }

@@ -16,5 +16,5 @@
 // buttons
 #define BTN_FIRE 13
 #define BTN_RELOAD 14
-#define BTN_WEAPON 15
+#define BTN_INTERACT 15
 #define BTN_PAUSE 27
