@@ -1,7 +1,7 @@
 #include <Arduino.h>
 
-#include <pins.h>
-#include <Input.h>
+#include "Input.h"
+#include "pins.h"
 
 constexpr uint16_t _adc_center = 2047;
 constexpr float _deadzone = 0.08f;
@@ -24,6 +24,7 @@ bool input::begin() {
   pinMode(BTN_RELOAD, INPUT_PULLUP);
   pinMode(BTN_INTERACT, INPUT_PULLUP);
   pinMode(BTN_PAUSE, INPUT_PULLUP);
+
   return true;
 }
 
@@ -82,12 +83,11 @@ float input::_axis(uint8_t pin) {
   if (v > -_deadzone && v < _deadzone) {
     return 0.0f;
   }
-  return v > 0.0f ? (v - _deadzone) / (1.0f - _deadzone)
-                  : (v + _deadzone) / (1.0f - _deadzone);
+  return v > 0.0f ? (v - _deadzone) / (1.0f - _deadzone) : (v + _deadzone) / (1.0f - _deadzone);
 }
 
 void input::_poll_button(input::_button& b, uint8_t pin) {
-  const bool raw = (digitalRead(pin) == LOW);  // active low, pull-up
+  const bool raw = (digitalRead(pin) == LOW); // active low, pull-up
   b.edge = false;
 
   if (raw != b.raw) {

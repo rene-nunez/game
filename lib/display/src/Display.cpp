@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 
-#include <Display.h>
+#include "Display.h"
 #include "pins.h"
 
 static TFT_eSPI _tft;
