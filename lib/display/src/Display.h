@@ -3,12 +3,12 @@
 #include <cstdint>
 
 namespace colour {
-constexpr uint16_t black = 0x0000;
-constexpr uint16_t white = 0xFFFF;
-constexpr uint16_t red = 0xF800;
-constexpr uint16_t green = 0x07E0;
-constexpr uint16_t blue = 0x001F;
-constexpr uint16_t yellow = 0xFFE0;
+  constexpr uint16_t black = 0x0000;
+  constexpr uint16_t white = 0xFFFF;
+  constexpr uint16_t red = 0xF800;
+  constexpr uint16_t green = 0x07E0;
+  constexpr uint16_t blue = 0x001F;
+  constexpr uint16_t yellow = 0xFFE0;
 }
 
 class display {

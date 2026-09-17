@@ -1,17 +1,20 @@
-#include <pins.h>
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 
 #include <Display.h>
+#include "pins.h"
 
 static TFT_eSPI _tft;
 
 bool display::begin() {
   _tft.init();
+
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH);
+
   _tft.setRotation(1); // landscape 320x240
   _tft.fillScreen(colour::black);
+
   return true;
 }
 
@@ -35,8 +38,7 @@ void display::pixel(int16_t x, int16_t y, uint16_t color) {
   _tft.drawPixel(x, y, color);
 }
 
-void display::text(const char* s, int16_t x, int16_t y, uint16_t color,
-                   uint8_t size, uint16_t bg) {
+void display::text(const char* s, int16_t x, int16_t y, uint16_t color, uint8_t size, uint16_t bg) {
   _tft.setCursor(x, y);
   _tft.setTextColor(color, bg);
   _tft.setTextSize(size);

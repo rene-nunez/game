@@ -2,7 +2,8 @@
 
 #include <cstdint>
 
-#include <Protocol.h>
+#include <Handler.h>
+#include <Input.h>
 
 class game {
 public:
@@ -11,7 +12,7 @@ public:
   static uint8_t role();
 
 private:
-  static message_handler _net;
+  static handler _handler;
   static uint32_t _tick;
   static uint32_t _peer_tick;
 
