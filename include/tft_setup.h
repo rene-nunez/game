@@ -2,7 +2,8 @@
 
 #include <pins.h>
 
-#define ILI9341_DRIVER
+#define ST7789_DRIVER
+#define TFT_INVERSION_OFF
 #define TFT_WIDTH 240
 #define TFT_HEIGHT 320
 #define LOAD_GLCD
