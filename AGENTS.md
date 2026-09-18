@@ -20,10 +20,17 @@
 - `lib/handler` — `handler`: typed routing/dispatch over `network`
 - `lib/display` — static `display` + `colour`; the only place TFT_eSPI is used
 - `lib/input` — static `input`: joystick (ADC1) + buttons (debounce + edge)
-- `lib/game` — static `game`: wires everything, drives the loop
+- `lib/game` — static `game`: wires everything, drives the loop; player sim (dt, clamp) + HUD strip; zombies next (P2)
 - `src/main.cpp` — bootstrap: `game::begin(DEVICE_ROLE)` + `game::update()`
 
-Libraries resolve via LDF `chain` (follow `#include`); no extra build flags. Filenames are case-sensitive on Linux
+Libraries resolve via LDF `chain` (follow `#include`). TFT config is applied repo-wide from `[env]` build flags: `-D USER_SETUP_LOADED` + `-include tft_setup.h` (pre-includes `pins.h` into every TU incl. TFT_eSPI sources). Filenames are case-sensitive on Linux
+
+## Display (TFT)
+
+- glass is a 240x320 ST7789 IPS; `include/tft_setup.h` sets `ST7789_DRIVER`, `TFT_INVERSION_OFF` (without it 0x0000 renders as white, everything washed), `LOAD_GLCD`, 40 MHz SPI
+- `display::begin()` uses rotation 1 = landscape 320x240: HUD strip (10px) on top, arena below
+- game paints `_grass` once in `begin`; entities erase-then-draw (old pos repainted with grass)
+- if a screen region keeps stale/ghost content across fills and reboots → driver/window mismatch, not a dead panel
 
 ## Add a message
 
