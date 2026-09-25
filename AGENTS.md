@@ -20,7 +20,7 @@
 - `lib/handler` — `handler`: typed routing/dispatch over `network`
 - `lib/display` — static `display` + `colour`; the only place TFT_eSPI is used
 - `lib/input` — static `input`: joystick (ADC1) + buttons (debounce + edge)
-- `lib/game` — static `game`: wires everything, drives the loop; player sim (dt, clamp) + HUD strip; zombies next (P2)
+- `lib/game` — static `game`: state machine (menu/mode/scores/playing/pause/game_over) + local sim (zombies chase, visible bullets, waves, score); P3 net sync next
 - `src/main.cpp` — bootstrap: `game::begin(DEVICE_ROLE)` + `game::update()`
 
 Libraries resolve via LDF `chain` (follow `#include`). TFT config is applied repo-wide from `[env]` build flags: `-D USER_SETUP_LOADED` + `-include tft_setup.h` (pre-includes `pins.h` into every TU incl. TFT_eSPI sources). Filenames are case-sensitive on Linux

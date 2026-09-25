@@ -1,7 +1,9 @@
 #include <Arduino.h>
-#include <esp_system.h>
-#include <cstring>
 #include <cmath>
+#include <cstring>
+
+#include <esp_sleep.h>
+#include <esp_system.h>
 
 #include <Display.h>
 #include "Game.h"
@@ -21,7 +23,21 @@ uint8_t game::_wave = 0;
 uint8_t game::_kills = 0;
 uint32_t game::_last_shot = 0;
 uint32_t game::_last_damage = 0;
-bool game::_game_over = false;
+
+uint32_t game::_score = 0;
+uint32_t game::_best = 0;
+uint32_t game::_total_kills = 0;
+
+game::_screens game::_scr = game::_screens::menu;
+uint8_t game::_sel = 0;
+int8_t game::_nav_dir = 0;
+
+namespace {
+  const char* const _menu_items[] = { "Start Game", "Scores", "Exit" };
+  const char* const _mode_items[] = { "Solo", "Multiplayer", "Back" };
+  const char* const _pause_items[] = { "Continue", "Restart", "Exit to Menu" };
+  const char* const _over_items[] = { "Restart", "Menu" };
+}
 
 bool game::begin(uint8_t role) {
   Serial.begin(115200);
@@ -50,16 +66,13 @@ bool game::begin(uint8_t role) {
     return false;
   }
 
-  const uint16_t iw = display::width();
-  const uint16_t ih = display::height();
-
   _grass = display::rgb565(38, 62, 38);
 
-  display::fill_rect(0, 0, iw, _hud_h, colour::black);    // hud strip
-  display::fill_rect(0, _hud_h, iw, ih - _hud_h, _grass); // arena
+  _scr = _screens::menu;
+  _sel = 0;
+  _nav_dir = 0;
 
-  _restart();
-  _last_ms = millis();
+  _draw_menu("ZOMBIES", _menu_items, 3);
 
   Serial.println("[game] ready");
   return true;
@@ -68,27 +81,16 @@ bool game::begin(uint8_t role) {
 void game::update() {
   input::update();
 
-  heartbeat_msg hb;
-  hb.tick = _tick++;
-  hb.role = role();
-  _handler.send(&hb, sizeof(hb));
-
-  const uint32_t now = millis();
-  float dt = (float)(now - _last_ms) / 1000.0f;
-  if (dt > 0.05f) { // clamp big gaps (serial pauses, etc)
-    dt = 0.05f;
+  switch (_scr) {
+    case _screens::menu: _update_menu(); break;
+    case _screens::mode: _update_mode(); break;
+    case _screens::scores: _update_scores(); break;
+    case _screens::playing: _update_playing(); break;
+    case _screens::pause: _update_pause(); break;
+    case _screens::game_over: _update_game_over(); break;
   }
-  _last_ms = now;
-
-  _render_clear();
-  _sim(dt, now);
-  _render_draw();
 
   delay(33); // ~30 fps
-}
-
-uint8_t game::role() {
-  return _handler.role();
 }
 
 void game::_on_heartbeat(const uint8_t* data, size_t len) {
@@ -102,6 +104,201 @@ void game::_on_heartbeat(const uint8_t* data, size_t len) {
   Serial.printf("[game] heartbeat from peer: tick=%lu role=%u\n", hb.tick, hb.role);
 }
 
+int8_t game::_nav_edge() {
+  const int8_t cur = input::jy() > 0.5f ? 1 : (input::jy() < -0.5f ? -1 : 0);
+  const int8_t edge = (cur != 0 && _nav_dir == 0) ? cur : 0;
+  _nav_dir = cur;
+  return edge;
+}
+
+void game::_draw_menu(const char* title, const char* const* items, uint8_t count) {
+  display::fill_rect(0, 0, display::width(), display::height(), colour::black);
+  display::text(title, (display::width() - 6 * (int16_t)strlen(title) * 2) / 2, 24, colour::yellow, 2);
+
+  int16_t y = 56;
+  for (uint8_t i = 0; i < count; ++i) {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%c %s", (i == _sel) ? '>' : ' ', items[i]);
+    display::text(buf, 16, y, (i == _sel) ? colour::green : colour::white, 1);
+    y += 16;
+  }
+
+  display::text("JOY: move   FIRE: select", 16, y + 24, colour::white, 1);
+}
+
+void game::_draw_scores() {
+  display::fill_rect(0, 0, display::width(), display::height(), colour::black);
+  display::text("SCORES", (display::width() - 6 * 6 * 2) / 2, 24, colour::yellow, 2);
+
+  char buf[32];
+  snprintf(buf, sizeof(buf), "Best score: %lu", _best);
+  display::text(buf, 16, 60, colour::white, 1);
+  snprintf(buf, sizeof(buf), "Total kills: %lu", _total_kills);
+  display::text(buf, 16, 76, colour::white, 1);
+
+  display::text("FIRE/PAUSE: back", 16, 120, colour::white, 1);
+}
+
+void game::_start_game() {
+  _restart();
+  _scr = _screens::playing;
+}
+
+void game::_enter_menu() {
+  _scr = _screens::menu;
+  _sel = 0;
+  _nav_dir = 0;
+}
+
+void game::_enter_game_over() {
+  _total_kills += _kills;
+  if (_score > _best) {
+    _best = _score;
+  }
+  _score = 0;
+  _scr = _screens::game_over;
+  _sel = 0;
+}
+
+void game::_update_menu() {
+  _draw_menu("ZOMBIES", _menu_items, 3);
+
+  const int8_t e = _nav_edge();
+  if (e) {
+    _sel = (uint8_t)((_sel + 3 + e) % 3);
+  }
+  if (input::fire_pressed()) {
+    switch (_sel) {
+      case 0:
+        _scr = _screens::mode;
+        _sel = 0;
+        break;
+      case 1:
+        _scr = _screens::scores;
+        _sel = 0;
+        break;
+      default: // Exit
+        esp_deep_sleep_start();
+        break;
+    }
+  }
+}
+
+void game::_update_mode() {
+  _draw_menu("GAME MODE", _mode_items, 3);
+
+  const int8_t e = _nav_edge();
+  if (e) {
+    _sel = (uint8_t)((_sel + 3 + e) % 3);
+  }
+  if (input::fire_pressed()) {
+    if (_sel == 2) { // Back
+      _enter_menu();
+    } else {
+      _start_game(); // Solo / Multiplayer (net-handshake comes in P3)
+    }
+  }
+}
+
+void game::_update_scores() {
+  _draw_scores();
+
+  if (input::fire_pressed() || input::pause_pressed()) {
+    _enter_menu();
+  }
+}
+
+void game::_update_playing() {
+  heartbeat_msg hb;
+  hb.tick = _tick++;
+  hb.role = _handler.role();
+  _handler.send(&hb, sizeof(hb));
+
+  const uint32_t now = millis();
+  float dt = (float)(now - _last_ms) / 1000.0f;
+  if (dt > 0.05f) { // clamp big gaps (serial pauses, menu)
+    dt = 0.05f;
+  }
+  _last_ms = now;
+
+  if (input::pause_pressed()) {
+    _scr = _screens::pause;
+    _sel = 0;
+    return;
+  }
+
+  _render_clear();
+  _sim(dt, now);
+  _render_draw();
+}
+
+void game::_update_pause() {
+  _draw_menu("PAUSED", _pause_items, 3);
+
+  const int8_t e = _nav_edge();
+  if (e) {
+    _sel = (uint8_t)((_sel + 3 + e) % 3);
+  }
+  if (input::pause_pressed()) {
+    _scr = _screens::playing;
+    _paint_field(); // clear leftover pause menu
+  } else if (input::fire_pressed()) {
+    switch (_sel) {
+      case 0: // Continue
+        _scr = _screens::playing;
+        _paint_field(); // clear leftover pause menu
+        break;
+      case 1: // Restart
+        _start_game();
+        break;
+      default: // Exit to Menu
+        _enter_menu();
+        break;
+    }
+  }
+}
+
+void game::_update_game_over() {
+  _draw_game_over();
+
+  const int8_t e = _nav_edge();
+  if (e) {
+    _sel = (uint8_t)((_sel + 2 + e) % 2);
+  }
+  if (input::fire_pressed()) {
+    if (_sel == 0) {
+      _start_game();
+    } else {
+      _enter_menu();
+    }
+  }
+}
+
+void game::_draw_game_over() {
+  display::fill_rect(0, 0, display::width(), display::height(), colour::black);
+  display::text("GAME OVER", (display::width() - 6 * 9 * 2) / 2, 24, colour::red, 2);
+
+  char buf[32];
+  snprintf(buf, sizeof(buf), "Score: %lu   Best: %lu", _score, _best);
+  display::text(buf, 24, 60, colour::white, 1);
+  snprintf(buf, sizeof(buf), "Wave: %u  Kills: %u", _wave, _kills);
+  display::text(buf, 24, 76, colour::white, 1);
+
+  int16_t y = 110;
+  for (uint8_t i = 0; i < 2; ++i) {
+    snprintf(buf, sizeof(buf), "%c %s", (i == _sel) ? '>' : ' ', _over_items[i]);
+    display::text(buf, 24, y, (i == _sel) ? colour::green : colour::white, 1);
+    y += 16;
+  }
+
+  display::text("JOY: move   FIRE: select", 24, y + 24, colour::white, 1);
+}
+
+void game::_paint_field() {
+  display::fill_rect(0, 0, display::width(), _hud_h, colour::black);                         // hud strip
+  display::fill_rect(0, _hud_h, display::width(), display::height() - _hud_h, _grass);       // arena
+}
+
 void game::_restart() {
   for (uint8_t i = 0; i < _max_bullets; ++i) {
     _bullets[i].active = false;
@@ -109,17 +306,17 @@ void game::_restart() {
 
   _kills = 0;
   _wave = 0;
+  _score = 0;
   _last_shot = 0;
   _last_damage = 0;
   _player_hp = _player_hp_max;
-  _game_over = false;
 
   _player = {
       (float)(display::width() - _player_size) / 2.0f,
       (float)(_hud_h + display::height() - _player_size) / 2.0f,
   };
 
-  display::fill_rect(0, _hud_h, display::width(), display::height() - _hud_h, _grass);
+  _paint_field();
   _spawn_wave();
 }
 
@@ -213,13 +410,6 @@ void game::_do_fire(uint32_t now) {
 }
 
 void game::_sim(float dt, uint32_t now) {
-  if (_game_over) {
-    if (input::fire_pressed()) {
-      _restart();
-    }
-    return;
-  }
-
   float dx = input::jx();
   float dy = input::jy();
 
@@ -266,6 +456,7 @@ void game::_sim(float dt, uint32_t now) {
         if (--_zombies[z].hp == 0) {
           _zombies[z].active = false;
           ++_kills;
+          _score += _score_per_kill;
         }
         break;
       }
@@ -303,7 +494,7 @@ void game::_sim(float dt, uint32_t now) {
   }
 
   if (_player_hp == 0) {
-    _game_over = true;
+    _enter_game_over();
     return;
   }
 
@@ -332,14 +523,10 @@ void game::_render_clear() {
 
 void game::_render_draw() {
   char buf[32];
+  const uint8_t r = _handler.role();
   snprintf(buf, sizeof(buf), "hp:%u wave:%u kills:%u %s",
-           _player_hp, _wave, _kills, role() == ROLE_HOST ? "host" : "client");
+           _player_hp, _wave, _kills, r == ROLE_HOST ? "host" : "client");
   display::text(buf, 4, 1, colour::yellow, 1);
-
-  if (_game_over) {
-    display::text("GAME OVER", display::width() / 2 - 32, 100, colour::red, 2);
-    display::text("FIRE=reiniciar", display::width() / 2 - 40, 122, colour::white, 1);
-  }
 
   display::fill_rect((int16_t)_player.x, (int16_t)_player.y, _player_size, _player_size, colour::blue);
   for (uint8_t i = 0; i < _max_zombies; ++i) {

@@ -9,9 +9,17 @@ class game {
   public:
     static bool begin(uint8_t role);
     static void update();
-    static uint8_t role();
 
   private:
+    enum class _screens : uint8_t {
+      menu,
+      mode,
+      scores,
+      playing,
+      pause,
+      game_over,
+    };
+
     static constexpr float _player_speed = 110.0f;
     static constexpr uint8_t _player_size = 8;
     static constexpr uint8_t _hud_h = 10;
@@ -32,6 +40,7 @@ class game {
     static constexpr float _contact_dist = 9.0f;
     static constexpr uint32_t _damage_cd_ms = 500;
     static constexpr uint8_t _player_hp_max = 5;
+    static constexpr uint32_t _score_per_kill = 10;
 
     struct _player_data {
       float x;
@@ -64,7 +73,14 @@ class game {
     static uint8_t _kills;
     static uint32_t _last_shot;
     static uint32_t _last_damage;
-    static bool _game_over;
+
+    static uint32_t _score;
+    static uint32_t _best;
+    static uint32_t _total_kills;
+
+    static _screens _scr;
+    static uint8_t _sel;
+    static int8_t _nav_dir;
 
     static handler _handler;
     static uint32_t _tick;
@@ -74,7 +90,23 @@ class game {
     static void _spawn_wave();
     static void _do_fire(uint32_t now);
     static void _restart();
+    static void _paint_field();
     static void _sim(float dt, uint32_t now);
     static void _render_clear();
     static void _render_draw();
+
+    static int8_t _nav_edge();
+    static void _draw_menu(const char* title, const char* const* items, uint8_t count);
+    static void _draw_scores();
+    static void _draw_game_over();
+    static void _start_game();
+    static void _enter_menu();
+    static void _enter_game_over();
+
+    static void _update_menu();
+    static void _update_mode();
+    static void _update_scores();
+    static void _update_playing();
+    static void _update_pause();
+    static void _update_game_over();
 };
