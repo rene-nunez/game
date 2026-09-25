@@ -190,13 +190,8 @@ void game::_enter_game_over() {
 void game::_sleep() {
   display::backlight(false);
 
-  const uint64_t wake_mask = (1ULL << BTN_FIRE) | (1ULL << BTN_RELOAD) |
-                             (1ULL << BTN_INTERACT) | (1ULL << BTN_PAUSE);
-  rtc_gpio_pullup_en((gpio_num_t)BTN_FIRE);
-  rtc_gpio_pullup_en((gpio_num_t)BTN_RELOAD);
-  rtc_gpio_pullup_en((gpio_num_t)BTN_INTERACT);
   rtc_gpio_pullup_en((gpio_num_t)BTN_PAUSE);
-  esp_sleep_enable_ext1_wakeup(wake_mask, ESP_EXT1_WAKEUP_ALL_LOW);
+  esp_sleep_enable_ext0_wakeup((gpio_num_t)BTN_PAUSE, 0); // LOW = pressed
 
   Serial.println("[game] sleeping...");
   Serial.flush();
