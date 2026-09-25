@@ -45,6 +45,10 @@ void display::text(const char* s, int16_t x, int16_t y, uint16_t color, uint8_t 
   _tft.print(s);
 }
 
+void display::backlight(bool on) {
+  digitalWrite(TFT_BL, on ? HIGH : LOW);
+}
+
 uint16_t display::rgb565(uint8_t r, uint8_t g, uint8_t b) {
   return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
 }

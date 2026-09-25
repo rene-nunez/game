@@ -2,11 +2,13 @@
 #include <cmath>
 #include <cstring>
 
+#include <driver/rtc_io.h>
 #include <esp_sleep.h>
 #include <esp_system.h>
 
 #include <Display.h>
 #include "Game.h"
+#include "pins.h"
 
 handler game::_handler;
 uint32_t game::_tick = 0;
@@ -31,6 +33,18 @@ uint32_t game::_total_kills = 0;
 game::_screens game::_scr = game::_screens::menu;
 uint8_t game::_sel = 0;
 int8_t game::_nav_dir = 0;
+
+namespace {
+  constexpr uint32_t _RTC_MAGIC = 0x5A3C21EDu;
+
+  struct _rtc_scores {
+    uint32_t magic;
+    uint32_t best;
+    uint32_t total_kills;
+  };
+
+  RTC_NOINIT_ATTR _rtc_scores _rtc;
+}
 
 namespace {
   const char* const _menu_items[] = { "Start Game", "Scores", "Exit" };
@@ -67,6 +81,17 @@ bool game::begin(uint8_t role) {
   }
 
   _grass = display::rgb565(38, 62, 38);
+
+  if (_rtc.magic == _RTC_MAGIC) {
+    _best = _rtc.best;
+    _total_kills = _rtc.total_kills;
+  } else {
+    _best = 0;
+    _total_kills = 0;
+    _rtc.magic = _RTC_MAGIC;
+    _rtc.best = 0;
+    _rtc.total_kills = 0;
+  }
 
   _scr = _screens::menu;
   _sel = 0;
@@ -155,9 +180,27 @@ void game::_enter_game_over() {
   if (_score > _best) {
     _best = _score;
   }
+  _rtc.best = _best;
+  _rtc.total_kills = _total_kills;
   _score = 0;
   _scr = _screens::game_over;
   _sel = 0;
+}
+
+void game::_sleep() {
+  display::backlight(false);
+
+  const uint64_t wake_mask = (1ULL << BTN_FIRE) | (1ULL << BTN_RELOAD) |
+                             (1ULL << BTN_INTERACT) | (1ULL << BTN_PAUSE);
+  rtc_gpio_pullup_en((gpio_num_t)BTN_FIRE);
+  rtc_gpio_pullup_en((gpio_num_t)BTN_RELOAD);
+  rtc_gpio_pullup_en((gpio_num_t)BTN_INTERACT);
+  rtc_gpio_pullup_en((gpio_num_t)BTN_PAUSE);
+  esp_sleep_enable_ext1_wakeup(wake_mask, ESP_EXT1_WAKEUP_ALL_LOW);
+
+  Serial.println("[game] sleeping...");
+  Serial.flush();
+  esp_deep_sleep_start();
 }
 
 void game::_update_menu() {
@@ -178,7 +221,7 @@ void game::_update_menu() {
         _sel = 0;
         break;
       default: // Exit
-        esp_deep_sleep_start();
+        _sleep();
         break;
     }
   }

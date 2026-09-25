@@ -96,6 +96,7 @@ class game {
     static void _render_draw();
 
     static int8_t _nav_edge();
+    static void _sleep();
     static void _draw_menu(const char* title, const char* const* items, uint8_t count);
     static void _draw_scores();
     static void _draw_game_over();
