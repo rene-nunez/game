@@ -160,10 +160,10 @@ int8_t game::_nav_edge() {
   return edge;
 }
 
-void game::_menu_item(const char* const* items, uint8_t i, bool selected, int16_t x, int16_t y0) {
+void game::_menu_item(const char* const* items, uint8_t i, bool selected, int16_t x, int16_t y) {
   char buf[32];
   snprintf(buf, sizeof(buf), "%c %s", selected ? '>' : ' ', items[i]);
-  display::text(buf, x, y0 + (int16_t)i * 16, selected ? colour::green : colour::white, 1);
+  display::text(buf, x, y, selected ? colour::green : colour::white, 1);
 }
 
 // A full-screen fill is 320*240*2 = 153600 bytes, ~31ms of SPI at 40MHz, so repainting
@@ -183,8 +183,8 @@ void game::_menu_cursor(const char* const* items, uint8_t count, int16_t x, int1
   if (_sel == _menu_sel || _sel >= count || _menu_sel >= count) { // count guards _sel
     return;
   }
-  _menu_item(items, _menu_sel, false, x, y0); // the line losing the cursor
-  _menu_item(items, _sel, true, x, y0);        // the line gaining it
+  _menu_item(items, _menu_sel, false, x, y0 + (int16_t)_menu_sel * _menu_row); // loses the cursor
+  _menu_item(items, _sel, true, x, y0 + (int16_t)_sel * _menu_row);            // gains it
   _menu_sel = _sel;
 }
 
@@ -192,13 +192,12 @@ void game::_draw_menu(const char* title, const char* const* items, uint8_t count
   display::fill_rect(0, 0, display::width(), display::height(), colour::black);
   display::text(title, (display::width() - 6 * (int16_t)strlen(title) * 2) / 2, 24, colour::yellow, 2);
 
-  int16_t y = 56;
   for (uint8_t i = 0; i < count; ++i) {
-    _menu_item(items, i, i == _sel, 16, y);
-    y += 16;
+    _menu_item(items, i, i == _sel, _menu_x, _menu_y + (int16_t)i * _menu_row);
   }
 
-  display::text("JOY: move   FIRE: select", 16, y + 24, colour::white, 1);
+  display::text("JOY: move   FIRE: select", _menu_x, _menu_y + (int16_t)count * _menu_row + 24,
+                colour::white, 1);
 }
 
 void game::_draw_scores() {
@@ -257,7 +256,7 @@ void game::_update_menu() {
   if (e) {
     _sel = (uint8_t)((_sel + 3 + e) % 3);
   }
-  _menu_cursor(_menu_items, 3, 16, 56);
+  _menu_cursor(_menu_items, 3, _menu_x, _menu_y);
   if (input::fire_pressed()) {
     switch (_sel) {
       case 0:
@@ -284,7 +283,7 @@ void game::_update_mode() {
   if (e) {
     _sel = (uint8_t)((_sel + 3 + e) % 3);
   }
-  _menu_cursor(_mode_items, 3, 16, 56);
+  _menu_cursor(_mode_items, 3, _menu_x, _menu_y);
   if (input::fire_pressed()) {
     if (_sel == 2) { // Back
       _enter_menu();
@@ -341,7 +340,7 @@ void game::_update_pause() {
   if (e) {
     _sel = (uint8_t)((_sel + 3 + e) % 3);
   }
-  _menu_cursor(_pause_items, 3, 16, 56);
+  _menu_cursor(_pause_items, 3, _menu_x, _menu_y);
   if (input::pause_pressed()) {
     _scr = _screens::playing;
     _panel_init(); // the pause menu covered the panel and the minimap
@@ -372,7 +371,7 @@ void game::_update_game_over() {
   if (e) {
     _sel = (uint8_t)((_sel + 2 + e) % 2);
   }
-  _menu_cursor(_over_items, 2, 24, 110);
+  _menu_cursor(_over_items, 2, _over_x, _over_y);
   if (input::fire_pressed()) {
     if (_sel == 0) {
       _start_game();
@@ -392,13 +391,11 @@ void game::_draw_game_over() {
   snprintf(buf, sizeof(buf), "Wave: %u  Kills: %u", _wave, _kills);
   display::text(buf, 24, 76, colour::white, 1);
 
-  int16_t y = 110;
   for (uint8_t i = 0; i < 2; ++i) {
-    _menu_item(_over_items, i, i == _sel, 24, y);
-    y += 16;
+    _menu_item(_over_items, i, i == _sel, _over_x, _over_y + (int16_t)i * _menu_row);
   }
 
-  display::text("JOY: move   FIRE: select", 24, y + 24, colour::white, 1);
+  display::text("JOY: move   FIRE: select", _over_x, _over_y + 2 * _menu_row + 24, colour::white, 1);
 }
 
 void game::_paint_view() {

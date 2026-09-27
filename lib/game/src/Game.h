@@ -33,6 +33,11 @@ class game {
     static constexpr int16_t _arena_bottom = _hud_h + _arena_h; // panel starts here
     static constexpr uint8_t _paint_chunk = 80;                // arena rows repainted per frame
 
+    // menu rows: the full paint and the cursor repaint must agree on where a row is, so
+    // both read these. _menu_item takes an absolute y; nothing may add the row pitch twice.
+    static constexpr int16_t _menu_x = 16, _menu_y = 56, _menu_row = 16;
+    static constexpr int16_t _over_x = 24, _over_y = 110; // the game over screen is indented
+
     // minimap: 2px per tile, drawn once, then only blips change
     static constexpr uint8_t _mm_scale = 2;
     static constexpr int16_t _mm_w = (int16_t)tilemap::COLS * _mm_scale;
