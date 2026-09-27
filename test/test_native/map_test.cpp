@@ -59,6 +59,41 @@ int main() {
   printf("layout: hud %d + arena %d + panel %d = %d | minimap %dx%d at %d,%d | cells %dx%d\n",
          HUD, AH, PANEL_H, SH, MM_W, MM_H, MM_X, MM_Y, MAX_X / AW + 1, MAX_Y / AH + 1);
 
+  // 0a) menu row layout, pinned. This cannot watch Game.cpp's coordinate arithmetic (the
+  // bank does not compile it, so the double-offset bug it documents was invisible here);
+  // what it does catch is a layout change that makes a row collide with the text above it
+  // or run into the footer. Rows sit at y0 + i*row in both the full paint and the cursor.
+  {
+    const int ROW = 16, GLYPH = 8, FOOT_GAP = 24;
+    struct Screen { int y0, count, above, last; const char* label; };
+    const Screen screens[2] = {
+        {56, 3, 24 + 2 * GLYPH, 88, "menu/mode/pause"},
+        {110, 2, 76 + GLYPH, 126, "game over"},
+    };
+    for (int s = 0; s < 2; ++s) {
+      const Screen& sc = screens[s];
+      const int foot = sc.y0 + sc.count * ROW + FOOT_GAP;
+      check(sc.y0 + (sc.count - 1) * ROW == sc.last, "menu row pitch misses the last row");
+      for (int i = 0; i < sc.count; ++i) {
+        const int y = sc.y0 + i * ROW;
+        if (y < sc.above + GLYPH) {
+          printf("FAIL %s row %d at y=%d runs into the text above (%d)\n", sc.label, i, y, sc.above);
+          ++fails;
+        }
+        if (y + GLYPH > foot) {
+          printf("FAIL %s row %d at y=%d runs into the footer at %d\n", sc.label, i, y, foot);
+          ++fails;
+        }
+      }
+      // a 4th item is what AGENTS.md warns about: it still has to fit above the footer
+      const int with4 = sc.y0 + 3 * ROW;
+      check(with4 + GLYPH <= foot, "no room for a 4th menu item above the footer");
+      printf("%s: rows", sc.label);
+      for (int i = 0; i < sc.count; ++i) printf(" %d", sc.y0 + i * ROW);
+      printf(", footer %d, text above ends %d\n", foot, sc.above);
+    }
+  }
+
   // 0b) the minimap camera-cell frame: the cell is a whole number of tiles, the 1px
   // outline stays inside the minimap, and every line lands inside the tile strips the
   // restore repaints (so erasing the frame cannot leave a yellow pixel behind)

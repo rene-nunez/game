@@ -179,6 +179,12 @@ bool game::_menu_entered(void) {
   return true;
 }
 
+// The playing screen never calls _menu_entered, so nothing else invalidates the paint: on
+// pause -> resume -> pause the screen id matches again and the full paint would be skipped.
+void game::_menu_invalidate(void) {
+  _menu_scr = 0xFF;
+}
+
 void game::_menu_cursor(const char* const* items, uint8_t count, int16_t x, int16_t y0) {
   if (_sel == _menu_sel || _sel >= count || _menu_sel >= count) { // count guards _sel
     return;
@@ -216,6 +222,7 @@ void game::_draw_scores() {
 void game::_start_game() {
   _restart();
   _scr = _screens::playing;
+  _menu_invalidate(); // the next pause must repaint its chrome
 }
 
 void game::_enter_menu() {
@@ -343,12 +350,14 @@ void game::_update_pause() {
   _menu_cursor(_pause_items, 3, _menu_x, _menu_y);
   if (input::pause_pressed()) {
     _scr = _screens::playing;
+    _menu_invalidate(); // the next pause must repaint its chrome
     _panel_init(); // the pause menu covered the panel and the minimap
     _paint_view(); // clear leftover pause menu
   } else if (input::fire_pressed()) {
     switch (_sel) {
       case 0: // Continue
         _scr = _screens::playing;
+        _menu_invalidate(); // the next pause must repaint its chrome
         _panel_init(); // the pause menu covered the panel and the minimap
         _paint_view(); // clear leftover pause menu
         break;

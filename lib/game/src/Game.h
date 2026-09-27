@@ -156,6 +156,7 @@ class game {
     static void _draw_scores();
     static void _draw_game_over();
     static bool _menu_entered();
+    static void _menu_invalidate();
     static void _menu_item(const char* const* items, uint8_t i, bool selected, int16_t x, int16_t y0);
     static void _menu_cursor(const char* const* items, uint8_t count, int16_t x, int16_t y0);
     static void _start_game();
