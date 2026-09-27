@@ -9,6 +9,7 @@ namespace colour {
   constexpr uint16_t green = 0x07E0;
   constexpr uint16_t blue = 0x001F;
   constexpr uint16_t yellow = 0xFFE0;
+  constexpr uint16_t cyan = 0x07FF;
 }
 
 class display {

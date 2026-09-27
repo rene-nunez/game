@@ -7,6 +7,9 @@ namespace tilemap {
   uint16_t spawn_py = 0;
 
   void init() {
+    spawn_px = 0;
+    spawn_py = 0;
+
     for (uint8_t r = 0; r < ROWS; ++r) {
       for (uint8_t c = 0; c < COLS; ++c) {
         const char ch = _art[r][c];
@@ -51,22 +54,34 @@ namespace tilemap {
     }
   }
 
-  bool solid(uint8_t tx, uint8_t ty) {
+  bool solid(int16_t tx, int16_t ty) {
+    if (tx < 0 || tx >= (int16_t)COLS || ty < 0 || ty >= (int16_t)ROWS) {
+      return true; // outside the map is wall
+    }
     return tiles[ty][tx] != FLOOR;
   }
 
-  uint8_t tile_at(float wx, float wy) {
-    int16_t tx = (int16_t)(wx / TILE);
-    int16_t ty = (int16_t)(wy / TILE);
-    if (tx < 0) {
-      tx = 0;
-    } else if (tx > (int16_t)COLS - 1) {
-      tx = (int16_t)COLS - 1;
+  bool solid_rect(int16_t x, int16_t y, uint8_t w, uint8_t h) {
+    const int16_t tx0 = x / TILE;
+    const int16_t ty0 = y / TILE;
+    const int16_t tx1 = (x + (int16_t)w - 1) / TILE;
+    const int16_t ty1 = (y + (int16_t)h - 1) / TILE;
+
+    for (int16_t ty = ty0; ty <= ty1; ++ty) {
+      for (int16_t tx = tx0; tx <= tx1; ++tx) {
+        if (solid(tx, ty)) {
+          return true;
+        }
+      }
     }
-    if (ty < 0) {
-      ty = 0;
-    } else if (ty > (int16_t)ROWS - 1) {
-      ty = (int16_t)ROWS - 1;
+    return false;
+  }
+
+  uint8_t tile_at(int16_t wx, int16_t wy) {
+    const int16_t tx = wx / TILE;
+    const int16_t ty = wy / TILE;
+    if (tx < 0 || tx >= (int16_t)COLS || ty < 0 || ty >= (int16_t)ROWS) {
+      return WALL;
     }
     return tiles[ty][tx];
   }
@@ -92,7 +107,7 @@ namespace tilemap {
     }
   }
 
-  uint16_t color_at(float wx, float wy) {
+  uint16_t color_at(int16_t wx, int16_t wy) {
     return color(tile_at(wx, wy));
   }
 }

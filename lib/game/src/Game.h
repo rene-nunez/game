@@ -5,6 +5,8 @@
 #include <Handler.h>
 #include <Input.h>
 
+#include "map.h"
+
 class game {
   public:
     static bool begin(uint8_t role);
@@ -22,13 +24,27 @@ class game {
 
     static constexpr float _player_speed = 110.0f;
     static constexpr uint8_t _player_size = 8;
+    static constexpr uint32_t _frame_ms = 33; // ~30 fps
+
+    // screen layout: hud strip, arena (world rows), bottom panel
     static constexpr uint8_t _hud_h = 10;
+    static constexpr uint8_t _arena_h = 160;
+    static constexpr uint8_t _panel_h = 70;
+    static constexpr int16_t _arena_bottom = _hud_h + _arena_h; // panel starts here
+    static constexpr uint8_t _paint_chunk = 80;                // arena rows repainted per frame
+
+    // minimap: 2px per tile, drawn once, then only blips change
+    static constexpr uint8_t _mm_scale = 2;
+    static constexpr int16_t _mm_w = (int16_t)tilemap::COLS * _mm_scale;
+    static constexpr int16_t _mm_h = (int16_t)tilemap::ROWS * _mm_scale;
+    static constexpr int16_t _mm_gap = 4;
+    static constexpr int16_t _mm_y = _arena_bottom + 5;
 
     static constexpr uint8_t _zombie_size = 6;
     static constexpr float _zombie_speed = 40.0f;
     static constexpr uint8_t _zombie_hp = 2;
     static constexpr uint8_t _max_zombies = 8;
-    static constexpr uint8_t _zombie_margin = 20;
+    static constexpr uint16_t _spawn_min_d2 = 100 * 100; // keep spawns >= 100px away
 
     static constexpr uint8_t _bullet_size = 4;
     static constexpr float _bullet_speed = 320.0f;
@@ -62,12 +78,18 @@ class game {
       bool active;
     };
 
-    static uint16_t _grass;
+    static int16_t _cam_x;
+    static int16_t _cam_y;
+    static int16_t _paint_y; // next arena row to repaint, _arena_h when idle
     static _player_data _player;
     static uint32_t _last_ms;
+    static uint32_t _last_frame_ms;
 
     static _zombie _zombies[_max_zombies];
     static _bullet _bullets[_max_bullets];
+    static int16_t _mm_px[1 + _max_zombies]; // minimap blips drawn last frame
+    static int16_t _mm_py[1 + _max_zombies];
+    static uint8_t _mm_n;
     static uint8_t _player_hp;
     static uint8_t _wave;
     static uint8_t _kills;
@@ -90,10 +112,22 @@ class game {
     static void _spawn_wave();
     static void _do_fire(uint32_t now);
     static void _restart();
-    static void _paint_field();
+    static void _paint_view();
+    static void _paint_step();
+    static void _update_camera();
+    static int16_t _cell_cam(int16_t p, int16_t step, int16_t max_cam);
+    static void _move_entity(float& x, float& y, float dx, float dy, uint8_t size);
+    static void _erase_world_rect(int16_t wx, int16_t wy, uint8_t size);
+    static void _fill_world_run(int16_t wx, int16_t sy, int16_t w, uint16_t col);
+    static void _fill_world_box(int16_t wx, int16_t wy, uint8_t size, uint16_t col);
     static void _sim(float dt, uint32_t now);
     static void _render_clear();
     static void _render_draw();
+    static void _panel_init();
+    static void _draw_panel();
+    static void _minimap_blips();
+    static int16_t _mm_x();
+    static void _mm_dot(int16_t wx, int16_t wy, uint16_t col);
 
     static int8_t _nav_edge();
     static void _sleep();

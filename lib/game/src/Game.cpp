@@ -8,18 +8,25 @@
 
 #include <Display.h>
 #include "Game.h"
+#include "map.h"
 #include "pins.h"
 
 handler game::_handler;
 uint32_t game::_tick = 0;
 uint32_t game::_peer_tick = 0;
 
-uint16_t game::_grass = 0;
+int16_t game::_cam_x = 0;
+int16_t game::_cam_y = 0;
+int16_t game::_paint_y = game::_arena_h;
 game::_player_data game::_player;
 uint32_t game::_last_ms = 0;
+uint32_t game::_last_frame_ms = 0;
 
 game::_zombie game::_zombies[game::_max_zombies];
 game::_bullet game::_bullets[game::_max_bullets];
+int16_t game::_mm_px[1 + game::_max_zombies] = {0};
+int16_t game::_mm_py[1 + game::_max_zombies] = {0};
+uint8_t game::_mm_n = 0;
 uint8_t game::_player_hp = 0;
 uint8_t game::_wave = 0;
 uint8_t game::_kills = 0;
@@ -80,7 +87,7 @@ bool game::begin(uint8_t role) {
     return false;
   }
 
-  _grass = display::rgb565(38, 62, 38);
+  tilemap::init();
 
   if (_rtc.magic == _RTC_MAGIC) {
     _best = _rtc.best;
@@ -96,6 +103,8 @@ bool game::begin(uint8_t role) {
   _scr = _screens::menu;
   _sel = 0;
   _nav_dir = 0;
+  _paint_y = _arena_h;
+  _last_frame_ms = millis();
 
   _draw_menu("ZOMBIES", _menu_items, 3);
 
@@ -115,7 +124,12 @@ void game::update() {
     case _screens::game_over: _update_game_over(); break;
   }
 
-  delay(33); // ~30 fps
+  // target-paced: a heavy frame pushes the next one out, it never catches up
+  const uint32_t spent = millis() - _last_frame_ms;
+  if (spent < _frame_ms) {
+    delay(_frame_ms - spent);
+  }
+  _last_frame_ms = millis();
 }
 
 void game::_on_heartbeat(const uint8_t* data, size_t len) {
@@ -267,6 +281,10 @@ void game::_update_playing() {
 
   _render_clear();
   _sim(dt, now);
+  if (_scr != _screens::playing) { // died this frame, the game-over screen takes over
+    return;
+  }
+  _update_camera();
   _render_draw();
 }
 
@@ -279,12 +297,14 @@ void game::_update_pause() {
   }
   if (input::pause_pressed()) {
     _scr = _screens::playing;
-    _paint_field(); // clear leftover pause menu
+    _panel_init(); // the pause menu covered the panel and the minimap
+    _paint_view(); // clear leftover pause menu
   } else if (input::fire_pressed()) {
     switch (_sel) {
       case 0: // Continue
         _scr = _screens::playing;
-        _paint_field(); // clear leftover pause menu
+        _panel_init(); // the pause menu covered the panel and the minimap
+        _paint_view(); // clear leftover pause menu
         break;
       case 1: // Restart
         _start_game();
@@ -332,9 +352,132 @@ void game::_draw_game_over() {
   display::text("JOY: move   FIRE: select", 24, y + 24, colour::white, 1);
 }
 
-void game::_paint_field() {
-  display::fill_rect(0, 0, display::width(), _hud_h, colour::black);                         // hud strip
-  display::fill_rect(0, _hud_h, display::width(), display::height() - _hud_h, _grass);       // arena
+void game::_paint_view() {
+  display::fill_rect(0, 0, (int16_t)display::width(), _hud_h, colour::black); // hud strip
+  _paint_y = 0; // the arena repaint runs from here, _paint_chunk rows per frame
+}
+
+void game::_paint_step() {
+  if (_paint_y >= _arena_h) {
+    return; // nothing pending
+  }
+
+  const int16_t sw = (int16_t)display::width();
+  const int16_t end = (_paint_y + _paint_chunk < _arena_h) ? _paint_y + _paint_chunk : _arena_h;
+
+  for (int16_t ry = _paint_y; ry < end; ++ry) { // merge same-colour runs per row
+    const int16_t wy = _cam_y + ry;
+    const int16_t sy = _hud_h + ry;
+    int16_t run_x = 0;
+    uint16_t run_col = tilemap::color_at(_cam_x, wy);
+
+    for (int16_t rx = 1; rx < sw; ++rx) {
+      const uint16_t col = tilemap::color_at(_cam_x + rx, wy);
+      if (col != run_col) {
+        display::fill_rect(run_x, sy, rx - run_x, 1, run_col);
+        run_x = rx;
+        run_col = col;
+      }
+    }
+    display::fill_rect(run_x, sy, sw - run_x, 1, run_col);
+  }
+
+  _paint_y = end;
+}
+
+int16_t game::_cell_cam(int16_t p, int16_t step, int16_t max_cam) {
+  int16_t cam = (int16_t)((p / step) * step);
+  if (cam < 0) {
+    cam = 0;
+  } else if (cam > max_cam) {
+    cam = max_cam;
+  }
+  return cam;
+}
+
+void game::_update_camera() {
+  const int16_t aw = (int16_t)display::width();
+  const int16_t pcx = (int16_t)(_player.x + _player_size / 2);
+  const int16_t pcy = (int16_t)(_player.y + _player_size / 2);
+
+  const int16_t cx = _cell_cam(pcx, aw, (int16_t)(tilemap::WORLD_W - aw));
+  const int16_t cy = _cell_cam(pcy, _arena_h, (int16_t)(tilemap::WORLD_H - _arena_h));
+
+  if (cx == _cam_x && cy == _cam_y) {
+    return;
+  }
+  _cam_x = cx;
+  _cam_y = cy;
+  _paint_view(); // the new screen must be repainted from the tilemap
+}
+
+void game::_move_entity(float& x, float& y, float dx, float dy, uint8_t size) {
+  x = constrain(x, 0.0f, (float)(tilemap::WORLD_W - size));
+  y = constrain(y, 0.0f, (float)(tilemap::WORLD_H - size));
+
+  const float nx = x + dx;
+  if (!tilemap::solid_rect((int16_t)nx, (int16_t)y, size, size)) {
+    x = nx;
+  }
+  const float ny = y + dy;
+  if (!tilemap::solid_rect((int16_t)x, (int16_t)ny, size, size)) {
+    y = ny;
+  }
+}
+
+void game::_fill_world_run(int16_t wx, int16_t sy, int16_t w, uint16_t col) {
+  if (w <= 0 || sy < _hud_h || sy >= _arena_bottom) {
+    return;
+  }
+  const int16_t sw = (int16_t)display::width();
+  int16_t x0 = wx - _cam_x;
+  int16_t x1 = x0 + w;
+  if (x1 <= 0 || x0 >= sw) {
+    return; // fully off-viewport
+  }
+  if (x0 < 0) {
+    x0 = 0;
+  }
+  if (x1 > sw) {
+    x1 = sw;
+  }
+  display::fill_rect(x0, sy, x1 - x0, 1, col);
+}
+
+void game::_erase_world_rect(int16_t wx, int16_t wy, uint8_t size) {
+  for (int16_t dy = 0; dy < (int16_t)size; ++dy) {
+    const int16_t wyy = wy + dy;
+    const int16_t sy = wyy - _cam_y + _hud_h;
+    if (sy < _hud_h || sy >= _arena_bottom) {
+      continue;
+    }
+
+    int16_t run_x = wx;
+    uint16_t run_col = tilemap::color_at(wx, wyy);
+    for (int16_t dx = 1; dx < (int16_t)size; ++dx) {
+      const uint16_t col = tilemap::color_at(wx + dx, wyy);
+      if (col != run_col) {
+        _fill_world_run(run_x, sy, (int16_t)(wx + dx - run_x), run_col);
+        run_x = wx + dx;
+        run_col = col;
+      }
+    }
+    _fill_world_run(run_x, sy, (int16_t)(wx + size - run_x), run_col);
+  }
+}
+
+void game::_fill_world_box(int16_t wx, int16_t wy, uint8_t size, uint16_t col) {
+  const int x0 = wx - _cam_x;
+  const int y0 = wy - _cam_y + _hud_h;
+  // clip to the arena so a half-sprite never bleeds into the hud strip nor the panel
+  const int cx0 = x0 > 0 ? x0 : 0;
+  const int cy0 = y0 > _hud_h ? y0 : _hud_h;
+  const int cx1 = x0 + size < (int)display::width() ? x0 + size : (int)display::width();
+  const int cy1 = y0 + size < (int)_arena_bottom ? y0 + size : (int)_arena_bottom;
+
+  if (cx0 < cx1 && cy0 < cy1) {
+    display::fill_rect(cx0, cy0, cx1 - cx0, cy1 - cy0, col);
+  }
 }
 
 void game::_restart() {
@@ -350,11 +493,13 @@ void game::_restart() {
   _player_hp = _player_hp_max;
 
   _player = {
-      (float)(display::width() - _player_size) / 2.0f,
-      (float)(_hud_h + display::height() - _player_size) / 2.0f,
+      (float)tilemap::spawn_px - _player_size / 2.0f,
+      (float)tilemap::spawn_py - _player_size / 2.0f,
   };
 
-  _paint_field();
+  _panel_init(); // static panel + minimap terrain, then blips on top
+  _update_camera();
+  _paint_view(); // forced: the game over screen cleared the arena and the camera may not move
   _spawn_wave();
 }
 
@@ -364,40 +509,32 @@ void game::_spawn_wave() {
     _zombies[i].active = false;
   }
 
-  const uint16_t iw = display::width();
-  const uint16_t ih = display::height();
   const uint8_t count = (_wave + 3u > _max_zombies) ? _max_zombies : (_wave + 3u);
+  const float px = _player.x + _player_size / 2.0f;
+  const float py = _player.y + _player_size / 2.0f;
+  const uint16_t total = (uint16_t)(tilemap::COLS * tilemap::ROWS);
+  const int16_t off = (int16_t)((tilemap::TILE - _zombie_size) / 2);
 
   for (uint8_t i = 0; i < count; ++i) {
-    float x = 0.0f;
-    float y = 0.0f;
-    for (uint8_t attempt = 0; attempt < 10; ++attempt) {
-      const uint16_t m = _zombie_margin;
-      switch (esp_random() % 4) {
-        case 0:
-          x = m + (float)(esp_random() % (iw - 2 * m));
-          y = _hud_h + m;
-          break;
-        case 1:
-          x = m + (float)(esp_random() % (iw - 2 * m));
-          y = ih - m;
-          break;
-        case 2:
-          x = m;
-          y = _hud_h + m + (float)(esp_random() % (ih - _hud_h - 2 * m));
-          break;
-        default:
-          x = iw - m;
-          y = _hud_h + m + (float)(esp_random() % (ih - _hud_h - 2 * m));
-          break;
+    // scan every tile from a random offset, so a spot is always found
+    const uint16_t start = (uint16_t)(esp_random() % total);
+    for (uint16_t k = 0; k < total; ++k) {
+      const uint16_t idx = (uint16_t)((start + k) % total);
+      const int16_t tx = (int16_t)(idx % tilemap::COLS);
+      const int16_t ty = (int16_t)(idx / tilemap::COLS);
+      if (tilemap::solid(tx, ty)) {
+        continue;
       }
-      const float dx = x - _player.x;
-      const float dy = y - _player.y;
-      if (dx * dx + dy * dy >= 3600.0f) { // >= 60px from player
-        break;
+      const float x = (float)(tx * tilemap::TILE + off);
+      const float y = (float)(ty * tilemap::TILE + off);
+      const float dx = x - px;
+      const float dy = y - py;
+      if (dx * dx + dy * dy < (float)_spawn_min_d2 && k + 1 < total) {
+        continue; // too close to the player, keep looking
       }
+      _zombies[i] = { x, y, _zombie_hp, true };
+      break;
     }
-    _zombies[i] = { x, y, _zombie_hp, true };
   }
 }
 
@@ -457,11 +594,7 @@ void game::_sim(float dt, uint32_t now) {
     dy /= len;
   }
 
-  _player.x += dx * _player_speed * dt;
-  _player.y += dy * _player_speed * dt;
-
-  _player.x = constrain(_player.x, 0.0f, (float)(display::width() - _player_size));
-  _player.y = constrain(_player.y, (float)_hud_h, (float)(display::height() - _player_size));
+  _move_entity(_player.x, _player.y, dx * _player_speed * dt, dy * _player_speed * dt, _player_size);
 
   if (input::fire_pressed()) {
     _do_fire(now);
@@ -476,8 +609,9 @@ void game::_sim(float dt, uint32_t now) {
     }
     _bullets[i].x += _bullets[i].vx * dt;
     _bullets[i].y += _bullets[i].vy * dt;
-    if (_bullets[i].x < 0.0f || _bullets[i].x > (float)display::width() ||
-        _bullets[i].y < _hud_h || _bullets[i].y > (float)display::height()) {
+    if (_bullets[i].x < 0.0f || _bullets[i].x > (float)(tilemap::WORLD_W - _bullet_size) ||
+        _bullets[i].y < 0.0f || _bullets[i].y > (float)(tilemap::WORLD_H - _bullet_size) ||
+        tilemap::solid_rect((int16_t)_bullets[i].x, (int16_t)_bullets[i].y, _bullet_size, _bullet_size)) {
       _bullets[i].active = false;
       continue;
     }
@@ -514,11 +648,9 @@ void game::_sim(float dt, uint32_t now) {
     if (d > 0.5f) {
       ddx /= d;
       ddy /= d;
-      _zombies[z].x += ddx * _zombie_speed * dt;
-      _zombies[z].y += ddy * _zombie_speed * dt;
+      _move_entity(_zombies[z].x, _zombies[z].y, ddx * _zombie_speed * dt, ddy * _zombie_speed * dt,
+                   _zombie_size);
     }
-    _zombies[z].x = constrain(_zombies[z].x, 0.0f, (float)(display::width() - _zombie_size));
-    _zombies[z].y = constrain(_zombies[z].y, (float)_hud_h, (float)(display::height() - _zombie_size));
 
     const float cdx = pcx - zcx;
     const float cdy = pcy - zcy;
@@ -546,35 +678,121 @@ void game::_sim(float dt, uint32_t now) {
 }
 
 void game::_render_clear() {
-  display::fill_rect((int16_t)_player.x, (int16_t)_player.y, _player_size, _player_size, _grass);
+  _erase_world_rect((int16_t)_player.x, (int16_t)_player.y, _player_size);
   for (uint8_t i = 0; i < _max_zombies; ++i) {
     if (_zombies[i].active) {
-      display::fill_rect((int16_t)_zombies[i].x, (int16_t)_zombies[i].y, _zombie_size, _zombie_size, _grass);
+      _erase_world_rect((int16_t)_zombies[i].x, (int16_t)_zombies[i].y, _zombie_size);
     }
   }
   for (uint8_t i = 0; i < _max_bullets; ++i) {
     if (_bullets[i].active) {
-      display::fill_rect((int16_t)_bullets[i].x, (int16_t)_bullets[i].y, _bullet_size, _bullet_size, _grass);
+      _erase_world_rect((int16_t)_bullets[i].x, (int16_t)_bullets[i].y, _bullet_size);
     }
   }
 }
 
 void game::_render_draw() {
   char buf[32];
-  const uint8_t r = _handler.role();
-  snprintf(buf, sizeof(buf), "hp:%u wave:%u kills:%u %s",
-           _player_hp, _wave, _kills, r == ROLE_HOST ? "host" : "client");
-  display::text(buf, 4, 1, colour::yellow, 1);
+  _paint_step(); // terrain first, so a cut never paints over a live sprite
 
-  display::fill_rect((int16_t)_player.x, (int16_t)_player.y, _player_size, _player_size, colour::blue);
+  snprintf(buf, sizeof(buf), "SCORE %lu", _score);
+  display::text(buf, 4, 1, colour::yellow, 1);
+  display::text(_handler.role() == ROLE_HOST ? "HOST" : "CLIENT", (int16_t)(display::width() - 34), 1,
+                colour::cyan, 1);
+
+  _fill_world_box((int16_t)_player.x, (int16_t)_player.y, _player_size, colour::blue);
   for (uint8_t i = 0; i < _max_zombies; ++i) {
     if (_zombies[i].active) {
-      display::fill_rect((int16_t)_zombies[i].x, (int16_t)_zombies[i].y, _zombie_size, _zombie_size, colour::red);
+      _fill_world_box((int16_t)_zombies[i].x, (int16_t)_zombies[i].y, _zombie_size, colour::red);
     }
   }
   for (uint8_t i = 0; i < _max_bullets; ++i) {
     if (_bullets[i].active) {
-      display::fill_rect((int16_t)_bullets[i].x, (int16_t)_bullets[i].y, _bullet_size, _bullet_size, colour::white);
+      _fill_world_box((int16_t)_bullets[i].x, (int16_t)_bullets[i].y, _bullet_size, colour::white);
+    }
+  }
+
+  _draw_panel();
+  _minimap_blips();
+}
+
+int16_t game::_mm_x() {
+  return (int16_t)display::width() - _mm_w - _mm_gap;
+}
+
+void game::_panel_init() {
+  const int16_t mx = _mm_x();
+  display::fill_rect(0, _arena_bottom, (int16_t)display::width(), _panel_h, colour::black);
+
+  for (uint8_t r = 0; r < tilemap::ROWS; ++r) { // minimap terrain, same-colour runs
+    const int16_t sy = _mm_y + (int16_t)r * _mm_scale;
+    const int16_t wy = (int16_t)r * tilemap::TILE;
+    int16_t run_x = 0;
+    uint16_t run_col = tilemap::color_at(0, wy);
+
+    for (uint8_t c = 1; c < tilemap::COLS; ++c) {
+      const uint16_t col = tilemap::color_at((int16_t)c * tilemap::TILE, wy);
+      if (col != run_col) {
+        display::fill_rect(mx + run_x * _mm_scale, sy, (int16_t)(c - run_x) * _mm_scale, _mm_scale,
+                           run_col);
+        run_x = c;
+        run_col = col;
+      }
+    }
+    display::fill_rect(mx + run_x * _mm_scale, sy, (int16_t)(tilemap::COLS - run_x) * _mm_scale,
+                       _mm_scale, run_col);
+  }
+
+  const uint16_t grid = display::rgb565(80, 80, 80); // 3x3 camera cell separators
+  for (uint8_t i = 1; i < 3; ++i) {
+    display::fill_rect(mx + (int16_t)(i * (tilemap::COLS / 3)) * _mm_scale, _mm_y, 1, _mm_h, grid);
+    display::fill_rect(mx, _mm_y + (int16_t)(i * (tilemap::ROWS / 3)) * _mm_scale, _mm_w, 1, grid);
+  }
+  _mm_n = 0;
+}
+
+void game::_draw_panel() {
+  char buf[32];
+
+  snprintf(buf, sizeof(buf), "BEST %lu", _best);
+  display::text(buf, 4, _arena_bottom + 4, colour::white, 1);
+  snprintf(buf, sizeof(buf), "WAVE %u", _wave);
+  display::text(buf, 4, _arena_bottom + 16, colour::white, 1);
+  snprintf(buf, sizeof(buf), "KILLS %u", _kills);
+  display::text(buf, 4, _arena_bottom + 28, colour::white, 1);
+
+  display::text("HP", 4, _arena_bottom + 40, colour::white, 1);
+  const uint16_t live = (_player_hp <= 2) ? colour::red : colour::green;
+  const uint16_t spent = display::rgb565(40, 40, 40);
+  for (uint8_t i = 0; i < _player_hp_max; ++i) {
+    display::fill_rect(30 + (int16_t)i * 10, _arena_bottom + 40, 8, 8, (i < _player_hp) ? live : spent);
+  }
+}
+
+void game::_mm_dot(int16_t wx, int16_t wy, uint16_t col) {
+  if (_mm_n >= (uint8_t)(1 + _max_zombies)) {
+    return;
+  }
+  display::fill_rect(_mm_x() + (wx / tilemap::TILE) * _mm_scale, _mm_y + (wy / tilemap::TILE) * _mm_scale,
+                     _mm_scale, _mm_scale, col);
+  _mm_px[_mm_n] = wx;
+  _mm_py[_mm_n] = wy;
+  ++_mm_n;
+}
+
+void game::_minimap_blips() {
+  for (uint8_t i = 0; i < _mm_n; ++i) { // restore the terrain under last frame's dots
+    const int16_t tx = _mm_px[i] / tilemap::TILE;
+    const int16_t ty = _mm_py[i] / tilemap::TILE;
+    display::fill_rect(_mm_x() + tx * _mm_scale, _mm_y + ty * _mm_scale, _mm_scale, _mm_scale,
+                       tilemap::color_at(_mm_px[i], _mm_py[i]));
+  }
+  _mm_n = 0;
+
+  _mm_dot((int16_t)_player.x, (int16_t)_player.y, colour::white);
+  for (uint8_t i = 0; i < _max_zombies; ++i) {
+    if (_zombies[i].active) {
+      _mm_dot((int16_t)_zombies[i].x, (int16_t)_zombies[i].y, colour::red);
     }
   }
 }
