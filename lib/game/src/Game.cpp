@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <cmath>
-#include <cstring>
 
 #include <driver/rtc_io.h>
 #include <esp_sleep.h>
@@ -10,6 +9,7 @@
 #include <map.h>
 #include <Panel.h>
 #include <Render.h>
+#include <Screens.h>
 #include <Scores.h>
 #include <Sim.h>
 
@@ -20,21 +20,11 @@ handler game::_handler;
 uint32_t game::_tick = 0;
 uint32_t game::_peer_tick = 0;
 
-uint8_t game::_menu_scr = 0xFF; // no menu painted yet
-uint8_t game::_menu_sel = 0;
-
 uint32_t game::_last_frame_ms = 0;
 
-game::_screens game::_scr = game::_screens::menu;
+screens::id game::_scr = screens::id::menu;
 uint8_t game::_sel = 0;
 int8_t game::_nav_dir = 0;
-
-namespace {
-  const char* const _menu_items[] = { "Start Game", "Scores", "Exit" };
-  const char* const _mode_items[] = { "Solo", "Multiplayer", "Back" };
-  const char* const _pause_items[] = { "Continue", "Restart", "Exit to Menu" };
-  const char* const _over_items[] = { "Restart", "Menu" };
-}
 
 bool game::begin(uint8_t role) {
   Serial.begin(115200);
@@ -67,12 +57,12 @@ bool game::begin(uint8_t role) {
 
   scores::load();
 
-  _scr = _screens::menu;
+  _scr = screens::id::menu;
   _sel = 0;
   _nav_dir = 0;
   _last_frame_ms = millis();
 
-  _draw_menu("ZOMBIES", _menu_items, 3);
+  screens::paint(_scr, _sel);
 
   Serial.println("[game] ready");
   return true;
@@ -82,12 +72,12 @@ void game::update() {
   input::update();
 
   switch (_scr) {
-    case _screens::menu: _update_menu(); break;
-    case _screens::mode: _update_mode(); break;
-    case _screens::scores: _update_scores(); break;
-    case _screens::playing: _update_playing(); break;
-    case _screens::pause: _update_pause(); break;
-    case _screens::game_over: _update_game_over(); break;
+    case screens::id::menu: _update_menu(); break;
+    case screens::id::mode: _update_mode(); break;
+    case screens::id::scores: _update_scores(); break;
+    case screens::id::playing: _update_playing(); break;
+    case screens::id::pause: _update_pause(); break;
+    case screens::id::game_over: _update_game_over(); break;
   }
 
   // target-paced: a heavy frame pushes the next one out, it never catches up
@@ -116,76 +106,17 @@ int8_t game::_nav_edge() {
   return edge;
 }
 
-void game::_menu_item(const char* const* items, uint8_t i, bool selected, int16_t x, int16_t y) {
-  char buf[32];
-  snprintf(buf, sizeof(buf), "%c %s", selected ? '>' : ' ', items[i]);
-  display::text(buf, x, y, selected ? colour::green : colour::white, 1);
-}
-
-// A full-screen fill is 320*240*2 = 153600 bytes, ~31ms of SPI at 40MHz, so repainting
-// it every frame both blew the 33ms budget and tore against the panel scan-out: that was
-// the line sweeping corner to corner. Paint the chrome once per screen entry, then only
-// the two cursor lines when the selection moves.
-bool game::_menu_entered(void) {
-  if (_menu_scr == (uint8_t)_scr) {
-    return false;
-  }
-  _menu_scr = (uint8_t)_scr;
-  _menu_sel = _sel;
-  return true;
-}
-
-// The playing screen never calls _menu_entered, so nothing else invalidates the paint: on
-// pause -> resume -> pause the screen id matches again and the full paint would be skipped.
-void game::_menu_invalidate(void) {
-  _menu_scr = 0xFF;
-}
-
-void game::_menu_cursor(const char* const* items, uint8_t count, int16_t x, int16_t y0) {
-  if (_sel == _menu_sel || _sel >= count || _menu_sel >= count) { // count guards _sel
-    return;
-  }
-  _menu_item(items, _menu_sel, false, x, y0 + (int16_t)_menu_sel * _menu_row); // loses the cursor
-  _menu_item(items, _sel, true, x, y0 + (int16_t)_sel * _menu_row);            // gains it
-  _menu_sel = _sel;
-}
-
-void game::_draw_menu(const char* title, const char* const* items, uint8_t count) {
-  display::fill_rect(0, 0, display::width(), display::height(), colour::black);
-  display::text(title, (display::width() - 6 * (int16_t)strlen(title) * 2) / 2, 24, colour::yellow, 2);
-
-  for (uint8_t i = 0; i < count; ++i) {
-    _menu_item(items, i, i == _sel, _menu_x, _menu_y + (int16_t)i * _menu_row);
-  }
-
-  display::text("JOY: move   FIRE: select", _menu_x, _menu_y + (int16_t)count * _menu_row + 24,
-                colour::white, 1);
-}
-
-void game::_draw_scores() {
-  display::fill_rect(0, 0, display::width(), display::height(), colour::black);
-  display::text("SCORES", (display::width() - 6 * 6 * 2) / 2, 24, colour::yellow, 2);
-
-  char buf[32];
-  snprintf(buf, sizeof(buf), "Best score: %lu", scores::best());
-  display::text(buf, 16, 60, colour::white, 1);
-  snprintf(buf, sizeof(buf), "Total kills: %lu", scores::total_kills());
-  display::text(buf, 16, 76, colour::white, 1);
-
-  display::text("FIRE/PAUSE: back", 16, 120, colour::white, 1);
-}
-
 void game::_start_game() {
   sim::reset();
   panel::init(); // static panel + minimap terrain, then blips on top
   render::update_camera();
   render::repaint(); // forced: the game over screen cleared the arena and the camera may not move
-  _scr = _screens::playing;
-  _menu_invalidate(); // the next pause must repaint its chrome
+  _scr = screens::id::playing;
+  screens::invalidate(); // the next pause must repaint its chrome
 }
 
 void game::_enter_menu() {
-  _scr = _screens::menu;
+  _scr = screens::id::menu;
   _sel = 0;
   _nav_dir = 0;
 }
@@ -193,7 +124,7 @@ void game::_enter_menu() {
 void game::_enter_game_over() {
   const sim::state& v = sim::view();
   scores::add_run(v.kills, v.score);
-  _scr = _screens::game_over;
+  _scr = screens::id::game_over;
   _sel = 0;
 }
 
@@ -208,24 +139,26 @@ void game::_sleep() {
   esp_deep_sleep_start();
 }
 
-void game::_update_menu() {
-  if (_menu_entered()) {
-    _draw_menu("ZOMBIES", _menu_items, 3);
-  }
-
+// the wrap reads the count from the screen itself, so adding an item cannot leave a
+// hardcoded modulus behind
+void game::_nav_step() {
   const int8_t e = _nav_edge();
-  if (e) {
-    _sel = (uint8_t)((_sel + 3 + e) % 3);
+  const uint8_t n = screens::count(_scr);
+  if (e && n > 0) {
+    _sel = (uint8_t)((_sel + n + e) % n);
   }
-  _menu_cursor(_menu_items, 3, _menu_x, _menu_y);
+}
+
+void game::_update_menu() {
+  _nav_step();
   if (input::fire_pressed()) {
     switch (_sel) {
       case 0:
-        _scr = _screens::mode;
+        _scr = screens::id::mode;
         _sel = 0;
         break;
       case 1:
-        _scr = _screens::scores;
+        _scr = screens::id::scores;
         _sel = 0;
         break;
       default: // Exit
@@ -233,18 +166,11 @@ void game::_update_menu() {
         break;
     }
   }
+  screens::paint(_scr, _sel);
 }
 
 void game::_update_mode() {
-  if (_menu_entered()) {
-    _draw_menu("GAME MODE", _mode_items, 3);
-  }
-
-  const int8_t e = _nav_edge();
-  if (e) {
-    _sel = (uint8_t)((_sel + 3 + e) % 3);
-  }
-  _menu_cursor(_mode_items, 3, _menu_x, _menu_y);
+  _nav_step();
   if (input::fire_pressed()) {
     if (_sel == 2) { // Back
       _enter_menu();
@@ -252,16 +178,14 @@ void game::_update_mode() {
       _start_game(); // Solo / Multiplayer (net-handshake comes in P3)
     }
   }
+  screens::paint(_scr, _sel);
 }
 
 void game::_update_scores() {
-  if (_menu_entered()) {
-    _draw_scores();
-  }
-
   if (input::fire_pressed() || input::pause_pressed()) {
     _enter_menu();
   }
+  screens::paint(_scr, _sel);
 }
 
 void game::_update_playing() {
@@ -271,7 +195,7 @@ void game::_update_playing() {
   _handler.send(&hb, sizeof(hb));
 
   if (input::pause_pressed()) {
-    _scr = _screens::pause;
+    _scr = screens::id::pause;
     _sel = 0;
     return;
   }
@@ -292,25 +216,17 @@ void game::_update_playing() {
 }
 
 void game::_update_pause() {
-  if (_menu_entered()) {
-    _draw_menu("PAUSED", _pause_items, 3);
-  }
-
-  const int8_t e = _nav_edge();
-  if (e) {
-    _sel = (uint8_t)((_sel + 3 + e) % 3);
-  }
-  _menu_cursor(_pause_items, 3, _menu_x, _menu_y);
+  _nav_step();
   if (input::pause_pressed()) {
-    _scr = _screens::playing;
-    _menu_invalidate(); // the next pause must repaint its chrome
+    _scr = screens::id::playing;
+    screens::invalidate(); // the next pause must repaint its chrome
     panel::init(); // the pause menu covered the panel and the minimap
     render::repaint(); // clear leftover pause menu
   } else if (input::fire_pressed()) {
     switch (_sel) {
       case 0: // Continue
-        _scr = _screens::playing;
-        _menu_invalidate(); // the next pause must repaint its chrome
+        _scr = screens::id::playing;
+        screens::invalidate(); // the next pause must repaint its chrome
         panel::init(); // the pause menu covered the panel and the minimap
         render::repaint(); // clear leftover pause menu
         break;
@@ -322,18 +238,11 @@ void game::_update_pause() {
         break;
     }
   }
+  screens::paint(_scr, _sel);
 }
 
 void game::_update_game_over() {
-  if (_menu_entered()) {
-    _draw_game_over();
-  }
-
-  const int8_t e = _nav_edge();
-  if (e) {
-    _sel = (uint8_t)((_sel + 2 + e) % 2);
-  }
-  _menu_cursor(_over_items, 2, _over_x, _over_y);
+  _nav_step();
   if (input::fire_pressed()) {
     if (_sel == 0) {
       _start_game();
@@ -341,23 +250,5 @@ void game::_update_game_over() {
       _enter_menu();
     }
   }
+  screens::paint(_scr, _sel);
 }
-
-void game::_draw_game_over() {
-  display::fill_rect(0, 0, display::width(), display::height(), colour::black);
-  display::text("GAME OVER", (display::width() - 6 * 9 * 2) / 2, 24, colour::red, 2);
-
-  char buf[32];
-  const sim::state& v = sim::view();
-  snprintf(buf, sizeof(buf), "Score: %lu   Best: %lu", v.score, scores::best());
-  display::text(buf, 24, 60, colour::white, 1);
-  snprintf(buf, sizeof(buf), "Wave: %u  Kills: %u", v.wave, v.kills);
-  display::text(buf, 24, 76, colour::white, 1);
-
-  for (uint8_t i = 0; i < 2; ++i) {
-    _menu_item(_over_items, i, i == _sel, _over_x, _over_y + (int16_t)i * _menu_row);
-  }
-
-  display::text("JOY: move   FIRE: select", _over_x, _over_y + 2 * _menu_row + 24, colour::white, 1);
-}
-
