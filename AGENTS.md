@@ -22,7 +22,7 @@
 - `lib/input` — static `input`: joystick (ADC1) + buttons (debounce + edge)
 - `lib/game` — static `game`: state machine (menu/mode/scores/playing/pause/game_over) + local sim (zombies path down a BFS field, visible bullets, waves, score) in world px with wall collision; P3 net sync next
 - `src/main.cpp` — bootstrap: `game::begin(DEVICE_ROLE)` + `game::update()`
-- `test/native` — host-side checks for the tilemap and the world/camera invariants; `./test/native/run.sh` builds `map_test.cpp` with plain `g++` (no Arduino, no hardware) and returns non-zero on failure
+- `test/test_native` — host-side checks for the tilemap and the world/camera invariants; `./test/test_native/run.sh` builds `map_test.cpp` with plain `g++` (no Arduino, no hardware) and returns non-zero on failure. The `test_` prefix is PlatformIO's own suite naming: its `list_test_names` skips any subdir that is not `test_*` and then falls back to treating the **whole** `test/` dir as one suite, which would try to compile the bank for the ESP32. `test_ignore = test_native` in the firmware envs makes `pio test` skip it on purpose — `run.sh` is the entry point, no Unity framework needed
 
 Libraries resolve via LDF `chain` (follow `#include`). TFT config is applied repo-wide from `[env]` build flags: `-D USER_SETUP_LOADED` + `-include tft_setup.h` (pre-includes `pins.h` into every TU incl. TFT_eSPI sources). Filenames are case-sensitive on Linux
 
@@ -31,7 +31,7 @@ Libraries resolve via LDF `chain` (follow `#include`). TFT config is applied rep
 - glass is a 240x320 ST7789 IPS; `include/tft_setup.h` sets `ST7789_DRIVER`, `TFT_INVERSION_OFF` (without it 0x0000 renders as white, everything washed), `LOAD_GLCD`, 40 MHz SPI
 - world is 960x480 (60x30 tiles x 16px), parsed in `tilemap::init`; every entity lives in **world px**; screen bands are the only screen-space things: HUD strip 10px, arena 160px, panel 70px (10+160+70 = 240 exactly)
 - screen→world: `sx = wx - _cam_x`, `sy = wy - _cam_y + _hud_h`; arena is 320x160, camera clamped to x[0,640] y[0,320] → an exact **3x3 grid of cells**, x{0,320,640} y{0,160,320}
-- the map is a 2-tile ring road plus cross streets on the cell borders, so a hard cut always lands on a street and there is always a kiting loop; 9 districts, 68% walkable, no sealed pockets (flood-filled in `test/native/map_test.cpp`)
+- the map is a 2-tile ring road plus cross streets on the cell borders, so a hard cut always lands on a street and there is always a kiting loop; 9 districts, 68% walkable, no sealed pockets (flood-filled in `test/test_native/map_test.cpp`)
 - camera is **hard-cut by cell**: `_cell_cam(player_centre, arena, max)` → the cell the player is in, clamped; any change schedules `_paint_view`, which repaints **80 arena rows per frame** (`_paint_step`, 51 KB ≈ 10.4 ms instead of 102 KB in one 20.9 ms frame) — one frame shows a half-painted cell, the repaint runs before sprites are drawn so it can never paint over a live one
 - frame pacing is a target deadline (`_frame_ms` 33) in `update()`, not `delay(33)`: a heavy frame pushes the next one out and never tries to catch up
 - erase is per-pixel-equivalent: `_erase_world_rect` walks every world px with `tilemap::color_at` and emits one `fill_rect` per same-colour run (verified identical to per-pixel); order is `_render_clear` → `_sim` → `_update_camera` → `_render_draw`, so the clear-before-sim is what erases entities that die mid-frame
@@ -40,7 +40,7 @@ Libraries resolve via LDF `chain` (follow `#include`). TFT config is applied rep
 - the minimap also outlines the camera cell (`_mm_frame`, 1px `colour::yellow`, 40x20 px at `_mm_ctx/_mm_cty`): the 4 edges of last frame's cell are restored first via `_mm_restore_row/_mm_restore_col` (run-length along their own axis, so the vertical edges collapse to ~2 calls each), then the new outline, then the dots on top. `_panel_init` clears `_mm_ctx`/`_mm_n` because the base repaint wipes both
 - zombie spawns scan tiles from a random offset and take the first walkable one >= 100px away, so it never depends on the world border being walkable
 - `tilemap::solid_rect` gates movement per axis (X then Y); bullets die on any non-FLOOR tile
-- zombie AI steers down a BFS distance field to the player: `tilemap::build_field(tx, ty)` floods `tilemap::field[ROWS][COLS]` (uint16, `UNREACHABLE` = 0xFFFF) with tile distances, and only runs when the player's **tile** changes, so it needs no timer and cannot go stale (~7 builds/s, ~0.9 ms each). Every reachable tile with `d > 0` has a 4-neighbour with `d-1`, so descending never stalls (asserted in `test/native/map_test.cpp`: 1218 tiles, 0 local minima, max 76)
+- zombie AI steers down a BFS distance field to the player: `tilemap::build_field(tx, ty)` floods `tilemap::field[ROWS][COLS]` (uint16, `UNREACHABLE` = 0xFFFF) with tile distances, and only runs when the player's **tile** changes, so it needs no timer and cannot go stale (~7 builds/s, ~0.9 ms each). Every reachable tile with `d > 0` has a 4-neighbour with `d-1`, so descending never stalls (asserted in `test/test_native/map_test.cpp`: 1218 tiles, 0 local minima, max 76)
 - `_zombie_steer` picks the lowest-distance of the 8 neighbours (`_nbr_x/_nbr_y`, cardinals first) and aims at that tile's **centre**, so a diagonal reads as drift instead of a tile-by-tile shuffle; it tries up to 3 candidates because the best one can be a diagonal that a wall corner blocks, and `_move_entity` turns that into a slide along the wall rather than a pass through it. A zombie on the player's tile stops (the contact check lands the hit) and an `UNREACHABLE` tile falls back to direct chase
 - this means **no zombie ever gets stuck** now, so the alley dead ends and the dock warehouse are no longer safe refuges and the waves are harder; the knobs are `_zombie_speed`, the wave count and `_spawn_min_d2`
 - if a screen region keeps stale/ghost content across fills and reboots → driver/window mismatch, not a dead panel
@@ -49,7 +49,7 @@ Libraries resolve via LDF `chain` (follow `#include`). TFT config is applied rep
 
 - **(P3) P2P net sync** — marshal game state over ESP-NOW (bullets/zombies/player), roles host/client from build; reproducible hand-roll steps in `lib/protocol`. The client currently runs the same local sim from its own spawn, which is fine for one peer but diverges as soon as shots land.
 - (P4/future) microSD scores persistence — not integrated yet; ArduinoJson only after hardware.
-- `_art` rows must stay exactly `COLS` chars: a longer row shifts the districts and eats the ring road (the ring check in `test/native/map_test.cpp` catches it).
+- `_art` rows must stay exactly `COLS` chars: a longer row shifts the districts and eats the ring road (the ring check in `test/test_native/map_test.cpp` catches it).
 
 ## Add a message
 
