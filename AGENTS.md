@@ -20,7 +20,7 @@
 - `lib/handler` — `handler`: typed routing/dispatch over `network`
 - `lib/display` — static `display` + `colour`; the only place TFT_eSPI is used
 - `lib/input` — static `input`: joystick (ADC1) + buttons (debounce + edge)
-- `lib/game` — static `game`: state machine (menu/mode/scores/playing/pause/game_over) + local sim (zombies chase, visible bullets, waves, score) in world px with wall collision; P3 net sync next
+- `lib/game` — static `game`: state machine (menu/mode/scores/playing/pause/game_over) + local sim (zombies path down a BFS field, visible bullets, waves, score) in world px with wall collision; P3 net sync next
 - `src/main.cpp` — bootstrap: `game::begin(DEVICE_ROLE)` + `game::update()`
 - `test/native` — host-side checks for the tilemap and the world/camera invariants; `./test/native/run.sh` builds `map_test.cpp` with plain `g++` (no Arduino, no hardware) and returns non-zero on failure
 
@@ -40,14 +40,15 @@ Libraries resolve via LDF `chain` (follow `#include`). TFT config is applied rep
 - the minimap also outlines the camera cell (`_mm_frame`, 1px `colour::yellow`, 40x20 px at `_mm_ctx/_mm_cty`): the 4 edges of last frame's cell are restored first via `_mm_restore_row/_mm_restore_col` (run-length along their own axis, so the vertical edges collapse to ~2 calls each), then the new outline, then the dots on top. `_panel_init` clears `_mm_ctx`/`_mm_n` because the base repaint wipes both
 - zombie spawns scan tiles from a random offset and take the first walkable one >= 100px away, so it never depends on the world border being walkable
 - `tilemap::solid_rect` gates movement per axis (X then Y); bullets die on any non-FLOOR tile
-- zombie AI is direct chase with per-axis collision and no pathfinding, so the alley dead ends and the dock warehouse can trap them; the ring road keeps an escape route for the player
+- zombie AI steers down a BFS distance field to the player: `tilemap::build_field(tx, ty)` floods `tilemap::field[ROWS][COLS]` (uint16, `UNREACHABLE` = 0xFFFF) with tile distances, and only runs when the player's **tile** changes, so it needs no timer and cannot go stale (~7 builds/s, ~0.9 ms each). Every reachable tile with `d > 0` has a 4-neighbour with `d-1`, so descending never stalls (asserted in `test/native/map_test.cpp`: 1218 tiles, 0 local minima, max 76)
+- `_zombie_steer` picks the lowest-distance of the 8 neighbours (`_nbr_x/_nbr_y`, cardinals first) and aims at that tile's **centre**, so a diagonal reads as drift instead of a tile-by-tile shuffle; it tries up to 3 candidates because the best one can be a diagonal that a wall corner blocks, and `_move_entity` turns that into a slide along the wall rather than a pass through it. A zombie on the player's tile stops (the contact check lands the hit) and an `UNREACHABLE` tile falls back to direct chase
+- this means **no zombie ever gets stuck** now, so the alley dead ends and the dock warehouse are no longer safe refuges and the waves are harder; the knobs are `_zombie_speed`, the wave count and `_spawn_min_d2`
 - if a screen region keeps stale/ghost content across fills and reboots → driver/window mismatch, not a dead panel
 
 ## Next (M3)
 
 - **(P3) P2P net sync** — marshal game state over ESP-NOW (bullets/zombies/player), roles host/client from build; reproducible hand-roll steps in `lib/protocol`. The client currently runs the same local sim from its own spawn, which is fine for one peer but diverges as soon as shots land.
 - (P4/future) microSD scores persistence — not integrated yet; ArduinoJson only after hardware.
-- zombie pathfinding (BFS over the 60x30 grid) if the dead ends prove too sticky.
 - `_art` rows must stay exactly `COLS` chars: a longer row shifts the districts and eats the ring road (the ring check in `test/native/map_test.cpp` catches it).
 
 ## Add a message

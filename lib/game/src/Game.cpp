@@ -17,6 +17,11 @@ uint32_t game::_peer_tick = 0;
 
 int16_t game::_cam_x = 0;
 int16_t game::_cam_y = 0;
+int16_t game::_path_tx = -1;
+int16_t game::_path_ty = -1;
+
+constexpr int8_t game::_nbr_x[8];
+constexpr int8_t game::_nbr_y[8];
 int16_t game::_paint_y = game::_arena_h;
 game::_player_data game::_player;
 uint32_t game::_last_ms = 0;
@@ -427,6 +432,76 @@ void game::_move_entity(float& x, float& y, float dx, float dy, uint8_t size) {
   }
 }
 
+bool game::_step_zombie(uint8_t z, float ddx, float ddy, float dt) {
+  const float d = sqrtf(ddx * ddx + ddy * ddy);
+  if (d <= 0.5f) {
+    return false;
+  }
+  float ox = _zombies[z].x, oy = _zombies[z].y;
+  _move_entity(ox, oy, ddx / d * _zombie_speed * dt, ddy / d * _zombie_speed * dt, _zombie_size);
+  return ox != _zombies[z].x || oy != _zombies[z].y;
+}
+
+void game::_zombie_steer(uint8_t z, float pcx, float pcy, float dt) {
+  const float zcx = _zombies[z].x + _zombie_size / 2.0f;
+  const float zcy = _zombies[z].y + _zombie_size / 2.0f;
+  int16_t ztx = (int16_t)(zcx / tilemap::TILE);
+  int16_t zty = (int16_t)(zcy / tilemap::TILE);
+
+  if (ztx < 0) { // keep every field[] read provably in bounds
+    ztx = 0;
+  } else if (ztx >= tilemap::COLS) {
+    ztx = tilemap::COLS - 1;
+  }
+  if (zty < 0) {
+    zty = 0;
+  } else if (zty >= tilemap::ROWS) {
+    zty = tilemap::ROWS - 1;
+  }
+
+  const uint16_t here = tilemap::field[zty][ztx];
+
+  if (here == 0) {
+    return; // on the player's tile, the contact check lands the hit
+  }
+  if (here == tilemap::UNREACHABLE) { // walled off from the player: straight chase as a fallback
+    _step_zombie(z, pcx - zcx, pcy - zcy, dt);
+    return;
+  }
+
+  uint8_t tried = 0;
+  for (uint8_t attempt = 0; attempt < 3; ++attempt) { // retry the next best tile if one is blocked
+    int8_t best = -1;
+    uint16_t best_d = here;
+    for (uint8_t k = 0; k < 8; ++k) {
+      if (tried & (1u << k)) {
+        continue;
+      }
+      const int16_t nx = (int16_t)(ztx + _nbr_x[k]);
+      const int16_t ny = (int16_t)(zty + _nbr_y[k]);
+      if (nx < 0 || nx >= tilemap::COLS || ny < 0 || ny >= tilemap::ROWS) {
+        continue;
+      }
+      const uint16_t d = tilemap::field[ny][nx];
+      if (d < best_d) {
+        best_d = d;
+        best = (int8_t)k;
+      }
+    }
+    if (best < 0) {
+      return;
+    }
+    tried = (uint8_t)(tried | (1u << best));
+
+    // aim at the centre of the chosen tile, so a diagonal reads as drift not a shuffle
+    const float tx_c = (float)(ztx + _nbr_x[best]) * tilemap::TILE + tilemap::TILE / 2.0f;
+    const float ty_c = (float)(zty + _nbr_y[best]) * tilemap::TILE + tilemap::TILE / 2.0f;
+    if (_step_zombie(z, tx_c - zcx, ty_c - zcy, dt)) {
+      return;
+    }
+  }
+}
+
 void game::_fill_world_run(int16_t wx, int16_t sy, int16_t w, uint16_t col) {
   if (w <= 0 || sy < _hud_h || sy >= _arena_bottom) {
     return;
@@ -498,6 +573,9 @@ void game::_restart() {
       (float)tilemap::spawn_px - _player_size / 2.0f,
       (float)tilemap::spawn_py - _player_size / 2.0f,
   };
+
+  _path_tx = -1; // force a fresh field at the new spawn
+  _path_ty = -1;
 
   _panel_init(); // static panel + minimap terrain, then blips on top
   _update_camera();
@@ -637,6 +715,15 @@ void game::_sim(float dt, uint32_t now) {
     }
   }
 
+  // the distance field only depends on the player's tile, so rebuild it when that changes
+  const int16_t ptx = (int16_t)pcx / tilemap::TILE;
+  const int16_t pty = (int16_t)pcy / tilemap::TILE;
+  if (ptx != _path_tx || pty != _path_ty) {
+    _path_tx = ptx;
+    _path_ty = pty;
+    tilemap::build_field(ptx, pty);
+  }
+
   for (uint8_t z = 0; z < _max_zombies; ++z) {
     if (!_zombies[z].active) {
       continue;
@@ -644,15 +731,7 @@ void game::_sim(float dt, uint32_t now) {
     const float zcx = _zombies[z].x + _zombie_size / 2.0f;
     const float zcy = _zombies[z].y + _zombie_size / 2.0f;
 
-    float ddx = pcx - zcx;
-    float ddy = pcy - zcy;
-    const float d = sqrtf(ddx * ddx + ddy * ddy);
-    if (d > 0.5f) {
-      ddx /= d;
-      ddy /= d;
-      _move_entity(_zombies[z].x, _zombies[z].y, ddx * _zombie_speed * dt, ddy * _zombie_speed * dt,
-                   _zombie_size);
-    }
+    _zombie_steer(z, pcx, pcy, dt);
 
     const float cdx = pcx - zcx;
     const float cdy = pcy - zcy;

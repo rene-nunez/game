@@ -342,6 +342,94 @@ int main() {
     check(bleeds == 0, "a sprite box can be drawn outside the arena");
   }
 
+  // 12) the BFS distance field: no local minima, so walking downhill always arrives
+  {
+    const int stx = tilemap::spawn_px / tilemap::TILE, sty = tilemap::spawn_py / tilemap::TILE;
+    tilemap::build_field(stx, sty);
+    check(tilemap::field[sty][stx] == 0, "the field does not start at 0 on the target tile");
+    check(tilemap::dist_at(tilemap::spawn_px, tilemap::spawn_py) == 0, "dist_at != 0 on the spawn");
+    check(tilemap::dist_at(-1, 100) == tilemap::UNREACHABLE, "dist_at left of world");
+    check(tilemap::dist_at(100, -1) == tilemap::UNREACHABLE, "dist_at above world");
+    check(tilemap::dist_at(tilemap::WORLD_W, 100) == tilemap::UNREACHABLE, "dist_at right of world");
+    check(tilemap::dist_at(100, tilemap::WORLD_H) == tilemap::UNREACHABLE, "dist_at below world");
+
+    const int dr[4] = {1, -1, 0, 0}, dc[4] = {0, 0, 1, -1};
+    int reach = 0, max_d = 0, no_descent = 0, solid_reached = 0;
+    for (int r = 0; r < tilemap::ROWS; ++r) {
+      for (int c = 0; c < tilemap::COLS; ++c) {
+        const uint16_t d = tilemap::field[r][c];
+        if (tilemap::solid(c, r)) {
+          if (d != tilemap::UNREACHABLE) ++solid_reached;
+          continue;
+        }
+        if (d == tilemap::UNREACHABLE) continue;
+        ++reach;
+        if ((int)d > max_d) max_d = d;
+        if (d == 0) continue;
+        bool down = false;
+        for (int k = 0; k < 4; ++k) {
+          const int nr = r + dr[k], nc = c + dc[k];
+          if (nr < 0 || nr >= tilemap::ROWS || nc < 0 || nc >= tilemap::COLS) continue;
+          if (tilemap::field[nr][nc] == d - 1) { down = true; break; }
+        }
+        if (!down) ++no_descent;
+      }
+    }
+    printf("field from the spawn: %d tiles, max dist %d, tiles without a descending 4-neighbour %d\n",
+           reach, max_d, no_descent);
+    check(reach == 1218, "the field does not reach every walkable tile");
+    check(no_descent == 0, "the field has a local minimum, a zombie would stall there");
+    check(solid_reached == 0, "the field leaked a distance onto a wall");
+    check(max_d < 255, "the field needs more than uint8_t");
+
+    // mirror of game::_zombie_steer: pick the lowest-distance neighbour, aim at its centre
+    const int nx[8] = {1, -1, 0, 0, 1, 1, -1, -1}, ny[8] = {0, 0, 1, -1, 1, -1, 1, -1};
+    int stuck = 0, longest = 0, samples = 0;
+    for (int r = 0; r < tilemap::ROWS; r += 1) {
+      for (int c = 0; c < tilemap::COLS; ++c) {
+        if ((r * 7 + c * 13) % 9) continue; // deterministic sample of tiles
+        if (tilemap::solid(c, r) || tilemap::field[r][c] == tilemap::UNREACHABLE) continue;
+        ++samples;
+        int cr = r, cc = c, steps = 0;
+        while (tilemap::field[cr][cc] > 0 && steps <= max_d + 2) {
+          int best = -1;
+          uint16_t best_d = tilemap::field[cr][cc];
+          for (int k = 0; k < 8; ++k) {
+            const int tr = cr + ny[k], tc = cc + nx[k];
+            if (tr < 0 || tr >= tilemap::ROWS || tc < 0 || tc >= tilemap::COLS) continue;
+            if (tilemap::field[tr][tc] < best_d) { best_d = tilemap::field[tr][tc]; best = k; }
+          }
+          if (best < 0) break;
+          cr += ny[best];
+          cc += nx[best];
+          ++steps;
+        }
+        if (tilemap::field[cr][cc] != 0) ++stuck;
+        if (steps > longest) longest = steps;
+      }
+    }
+    printf("steering from %d sampled tiles: %d never reach the player, longest walk %d steps (max %d)\n",
+           samples, stuck, longest, max_d);
+    check(stuck == 0, "a zombie can descend the field and still never reach the player");
+
+    // a wall tile has nothing to spread from
+    int wtx = -1, wty = -1;
+    for (int r = 0; r < tilemap::ROWS && wtx < 0; ++r) {
+      for (int c = 0; c < tilemap::COLS; ++c) {
+        if (tilemap::solid(c, r)) { wtx = c; wty = r; break; }
+      }
+    }
+    int wall_leaks = 0;
+    if (wtx >= 0) {
+      tilemap::build_field(wtx, wty);
+      for (int rr = 0; rr < tilemap::ROWS; ++rr)
+        for (int cc = 0; cc < tilemap::COLS; ++cc)
+          if (tilemap::field[rr][cc] != tilemap::UNREACHABLE) ++wall_leaks;
+    }
+    check(wtx >= 0 && wall_leaks == 0, "build_field on a wall must leave everything UNREACHABLE");
+    printf("build_field on a wall tile %d,%d: %d tiles reachable, no hang\n", wtx, wty, wall_leaks);
+  }
+
   printf(fails ? "\n%d FAILURES\n" : "\nall checks passed\n", fails);
   return fails ? 1 : 0;
 }

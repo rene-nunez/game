@@ -5,6 +5,7 @@ namespace tilemap {
   uint8_t tiles[ROWS][COLS];
   uint16_t spawn_px = 0;
   uint16_t spawn_py = 0;
+  uint16_t field[ROWS][COLS];
 
   void init() {
     spawn_px = 0;
@@ -109,5 +110,45 @@ namespace tilemap {
 
   uint16_t color_at(int16_t wx, int16_t wy) {
     return color(tile_at(wx, wy));
+  }
+
+  static const int8_t _step_x[4] = {1, -1, 0, 0};
+  static const int8_t _step_y[4] = {0, 0, 1, -1};
+  static uint16_t _queue[COLS * ROWS];
+
+  void build_field(int16_t tx, int16_t ty) {
+    for (uint8_t r = 0; r < ROWS; ++r) {
+      for (uint8_t c = 0; c < COLS; ++c) {
+        field[r][c] = UNREACHABLE;
+      }
+    }
+    if (tx < 0 || tx >= (int16_t)COLS || ty < 0 || ty >= (int16_t)ROWS || solid(tx, ty)) {
+      return; // nothing to spread from: every tile stays UNREACHABLE
+    }
+
+    uint16_t head = 0, tail = 0; // each tile is queued at most once, so tail <= COLS * ROWS
+    field[ty][tx] = 0;
+    _queue[tail++] = (uint16_t)(ty * COLS + tx);
+
+    while (head < tail) {
+      const uint16_t idx = _queue[head++];
+      const int16_t cx = (int16_t)(idx % COLS), cy = (int16_t)(idx / COLS);
+      const uint16_t nd = (uint16_t)(field[cy][cx] + 1);
+
+      for (uint8_t k = 0; k < 4; ++k) {
+        const int16_t nx = (int16_t)(cx + _step_x[k]), ny = (int16_t)(cy + _step_y[k]);
+        if (nx < 0 || nx >= (int16_t)COLS || ny < 0 || ny >= (int16_t)ROWS) continue;
+        if (field[ny][nx] != UNREACHABLE || solid(nx, ny)) continue;
+        field[ny][nx] = nd;
+        _queue[tail++] = (uint16_t)(ny * COLS + nx);
+      }
+    }
+  }
+
+  uint16_t dist_at(int16_t wx, int16_t wy) {
+    if (wx < 0 || wy < 0 || wx >= (int16_t)WORLD_W || wy >= (int16_t)WORLD_H) {
+      return UNREACHABLE;
+    }
+    return field[wy / TILE][wx / TILE];
   }
 }

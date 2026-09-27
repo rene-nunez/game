@@ -70,6 +70,11 @@ class game {
       bool active;
     };
 
+    // 8-neighbourhood, cardinals first: the zombie aims at the best neighbour's centre,
+    // so a diagonal step reads as smooth drift instead of a tile-by-tile shuffle
+    static constexpr int8_t _nbr_x[8] = {1, -1, 0, 0, 1, 1, -1, -1};
+    static constexpr int8_t _nbr_y[8] = {0, 0, 1, -1, 1, -1, 1, -1};
+
     struct _bullet {
       float x;
       float y;
@@ -80,6 +85,8 @@ class game {
 
     static int16_t _cam_x;
     static int16_t _cam_y;
+    static int16_t _path_tx; // player tile the BFS field was last built for, -1 = none
+    static int16_t _path_ty;
     static int16_t _paint_y; // next arena row to repaint, _arena_h when idle
     static _player_data _player;
     static uint32_t _last_ms;
@@ -119,6 +126,8 @@ class game {
     static void _update_camera();
     static int16_t _cell_cam(int16_t p, int16_t step, int16_t max_cam);
     static void _move_entity(float& x, float& y, float dx, float dy, uint8_t size);
+    static bool _step_zombie(uint8_t z, float ddx, float ddy, float dt);
+    static void _zombie_steer(uint8_t z, float pcx, float pcy, float dt);
     static void _erase_world_rect(int16_t wx, int16_t wy, uint8_t size);
     static void _fill_world_run(int16_t wx, int16_t sy, int16_t w, uint16_t col);
     static void _fill_world_box(int16_t wx, int16_t wy, uint8_t size, uint16_t col);

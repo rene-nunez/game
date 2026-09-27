@@ -61,10 +61,18 @@ namespace tilemap {
   extern uint16_t spawn_px;
   extern uint16_t spawn_py;
 
+  // BFS distance field to a target tile, in tile steps, over walkable tiles only.
+  // UNREACHABLE marks the tiles the target cannot reach. Every reachable tile with
+  // d > 0 has a 4-neighbour with d - 1, so walking downhill never gets stuck.
+  constexpr uint16_t UNREACHABLE = 0xFFFF;
+  extern uint16_t field[ROWS][COLS];
+
   void init();
   bool solid(int16_t tx, int16_t ty);
   bool solid_rect(int16_t x, int16_t y, uint8_t w, uint8_t h);
   uint8_t tile_at(int16_t wx, int16_t wy);
   uint16_t color(uint8_t tile);
   uint16_t color_at(int16_t wx, int16_t wy);
+  void build_field(int16_t tx, int16_t ty);
+  uint16_t dist_at(int16_t wx, int16_t wy);
 }
