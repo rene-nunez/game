@@ -5,7 +5,7 @@
 #include <Handler.h>
 #include <Input.h>
 
-#include "map.h"
+#include <map.h>
 
 class game {
   public:

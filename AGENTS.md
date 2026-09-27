@@ -20,11 +20,12 @@
 - `lib/handler` — `handler`: typed routing/dispatch over `network`
 - `lib/display` — static `display` + `colour`; the only place TFT_eSPI is used
 - `lib/input` — static `input`: joystick (ADC1) + buttons (debounce + edge)
+- `lib/world` — static `tilemap`: the 60x30 tile map, its `_art` rows, wall queries, spawn point and the BFS `field` that `build_field()` floods. It was extracted out of `lib/game` so the sim and the renderer can both depend on it without depending on the game
 - `lib/game` — static `game`: state machine (menu/mode/scores/playing/pause/game_over) + local sim (zombies path down a BFS field, visible bullets, waves, score) in world px with wall collision; P3 net sync next
 - `src/main.cpp` — bootstrap: `game::begin(DEVICE_ROLE)` + `game::update()`
 - `test/test_native` — host-side checks for the tilemap and the world/camera invariants; `./test/test_native/run.sh` builds `map_test.cpp` with plain `g++` (no Arduino, no hardware) and returns non-zero on failure. The `test_` prefix is PlatformIO's own suite naming: its `list_test_names` skips any subdir that is not `test_*` and then falls back to treating the **whole** `test/` dir as one suite, which would try to compile the bank for the ESP32. `test_ignore = test_native` in the firmware envs makes `pio test` skip it on purpose — `run.sh` is the entry point, no Unity framework needed
 
-Libraries resolve via LDF `chain` (follow `#include`). TFT config is applied repo-wide from `[env]` build flags: `-D USER_SETUP_LOADED` + `-include tft_setup.h` (pre-includes `pins.h` into every TU incl. TFT_eSPI sources). Filenames are case-sensitive on Linux
+Libraries resolve via LDF `chain` (follow `#include`). Every `lib/*/src/*.cpp` is compiled regardless of what includes it — `map.cpp` was never `#include`d by anything yet always landed in the binary, which is what lets a class be split across libraries (see `lib/world`) by just moving files. Cross-library includes use `<>` (`#include <map.h>`), same-directory ones use `""`. TFT config is applied repo-wide from `[env]` build flags: `-D USER_SETUP_LOADED` + `-include tft_setup.h` (pre-includes `pins.h` into every TU incl. TFT_eSPI sources). Filenames are case-sensitive on Linux
 
 ## Display (TFT)
 
