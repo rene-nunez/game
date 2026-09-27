@@ -318,7 +318,24 @@ int main() {
     check(AH * SW * 2 <= 120000, "arena repaint payload");
   }
 
-  // 11) nothing may bleed into the hud strip or the panel
+  // 11) the menu must not repaint the whole panel every frame
+  {
+    // a full-screen fill is 320*240*2 bytes, ~31ms of SPI at 40MHz: done per frame it
+    // both blew the 33ms budget and tore against the scan-out (a line sweeping the panel)
+    const int full_bytes = SW * SH * 2;
+    const int spi_hz = 40000000;
+    const int full_ms = (int)((1000L * full_bytes * 8) / spi_hz);
+    // what a steady-state menu frame costs: the two cursor lines, 32 chars of 6x8 glyphs
+    const int line_bytes = 32 * 6 * 8 * 2;
+    const int cursor_bytes = 2 * line_bytes;
+    printf("menu: full-screen fill %d bytes = %dms at 40MHz | steady frame %d bytes\n", full_bytes,
+           full_ms, cursor_bytes);
+    check(full_ms >= 30, "the full-screen fill model is off, re-check the SPI clock");
+    check(cursor_bytes * 20 < full_bytes, "a menu frame is too close to a full repaint");
+    check(cursor_bytes * 20 / (spi_hz / 8 / 1000) <= 33, "a menu frame blows the 33ms budget");
+  }
+
+  // 12) nothing may bleed into the hud strip or the panel
   {
     int bleeds = 0;
     for (int cy = 0; cy <= MAX_Y; cy += 17) {
@@ -342,7 +359,7 @@ int main() {
     check(bleeds == 0, "a sprite box can be drawn outside the arena");
   }
 
-  // 12) the BFS distance field: no local minima, so walking downhill always arrives
+  // 13) the BFS distance field: no local minima, so walking downhill always arrives
   {
     const int stx = tilemap::spawn_px / tilemap::TILE, sty = tilemap::spawn_py / tilemap::TILE;
     tilemap::build_field(stx, sty);

@@ -15,6 +15,9 @@ handler game::_handler;
 uint32_t game::_tick = 0;
 uint32_t game::_peer_tick = 0;
 
+uint8_t game::_menu_scr = 0xFF; // no menu painted yet
+uint8_t game::_menu_sel = 0;
+
 int16_t game::_cam_x = 0;
 int16_t game::_cam_y = 0;
 int16_t game::_path_tx = -1;
@@ -157,15 +160,41 @@ int8_t game::_nav_edge() {
   return edge;
 }
 
+void game::_menu_item(const char* const* items, uint8_t i, bool selected, int16_t x, int16_t y0) {
+  char buf[32];
+  snprintf(buf, sizeof(buf), "%c %s", selected ? '>' : ' ', items[i]);
+  display::text(buf, x, y0 + (int16_t)i * 16, selected ? colour::green : colour::white, 1);
+}
+
+// A full-screen fill is 320*240*2 = 153600 bytes, ~31ms of SPI at 40MHz, so repainting
+// it every frame both blew the 33ms budget and tore against the panel scan-out: that was
+// the line sweeping corner to corner. Paint the chrome once per screen entry, then only
+// the two cursor lines when the selection moves.
+bool game::_menu_entered(void) {
+  if (_menu_scr == (uint8_t)_scr) {
+    return false;
+  }
+  _menu_scr = (uint8_t)_scr;
+  _menu_sel = _sel;
+  return true;
+}
+
+void game::_menu_cursor(const char* const* items, uint8_t count, int16_t x, int16_t y0) {
+  if (_sel == _menu_sel || _sel >= count || _menu_sel >= count) { // count guards _sel
+    return;
+  }
+  _menu_item(items, _menu_sel, false, x, y0); // the line losing the cursor
+  _menu_item(items, _sel, true, x, y0);        // the line gaining it
+  _menu_sel = _sel;
+}
+
 void game::_draw_menu(const char* title, const char* const* items, uint8_t count) {
   display::fill_rect(0, 0, display::width(), display::height(), colour::black);
   display::text(title, (display::width() - 6 * (int16_t)strlen(title) * 2) / 2, 24, colour::yellow, 2);
 
   int16_t y = 56;
   for (uint8_t i = 0; i < count; ++i) {
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%c %s", (i == _sel) ? '>' : ' ', items[i]);
-    display::text(buf, 16, y, (i == _sel) ? colour::green : colour::white, 1);
+    _menu_item(items, i, i == _sel, 16, y);
     y += 16;
   }
 
@@ -220,12 +249,15 @@ void game::_sleep() {
 }
 
 void game::_update_menu() {
-  _draw_menu("ZOMBIES", _menu_items, 3);
+  if (_menu_entered()) {
+    _draw_menu("ZOMBIES", _menu_items, 3);
+  }
 
   const int8_t e = _nav_edge();
   if (e) {
     _sel = (uint8_t)((_sel + 3 + e) % 3);
   }
+  _menu_cursor(_menu_items, 3, 16, 56);
   if (input::fire_pressed()) {
     switch (_sel) {
       case 0:
@@ -244,12 +276,15 @@ void game::_update_menu() {
 }
 
 void game::_update_mode() {
-  _draw_menu("GAME MODE", _mode_items, 3);
+  if (_menu_entered()) {
+    _draw_menu("GAME MODE", _mode_items, 3);
+  }
 
   const int8_t e = _nav_edge();
   if (e) {
     _sel = (uint8_t)((_sel + 3 + e) % 3);
   }
+  _menu_cursor(_mode_items, 3, 16, 56);
   if (input::fire_pressed()) {
     if (_sel == 2) { // Back
       _enter_menu();
@@ -260,7 +295,9 @@ void game::_update_mode() {
 }
 
 void game::_update_scores() {
-  _draw_scores();
+  if (_menu_entered()) {
+    _draw_scores();
+  }
 
   if (input::fire_pressed() || input::pause_pressed()) {
     _enter_menu();
@@ -296,12 +333,15 @@ void game::_update_playing() {
 }
 
 void game::_update_pause() {
-  _draw_menu("PAUSED", _pause_items, 3);
+  if (_menu_entered()) {
+    _draw_menu("PAUSED", _pause_items, 3);
+  }
 
   const int8_t e = _nav_edge();
   if (e) {
     _sel = (uint8_t)((_sel + 3 + e) % 3);
   }
+  _menu_cursor(_pause_items, 3, 16, 56);
   if (input::pause_pressed()) {
     _scr = _screens::playing;
     _panel_init(); // the pause menu covered the panel and the minimap
@@ -324,12 +364,15 @@ void game::_update_pause() {
 }
 
 void game::_update_game_over() {
-  _draw_game_over();
+  if (_menu_entered()) {
+    _draw_game_over();
+  }
 
   const int8_t e = _nav_edge();
   if (e) {
     _sel = (uint8_t)((_sel + 2 + e) % 2);
   }
+  _menu_cursor(_over_items, 2, 24, 110);
   if (input::fire_pressed()) {
     if (_sel == 0) {
       _start_game();
@@ -351,8 +394,7 @@ void game::_draw_game_over() {
 
   int16_t y = 110;
   for (uint8_t i = 0; i < 2; ++i) {
-    snprintf(buf, sizeof(buf), "%c %s", (i == _sel) ? '>' : ' ', _over_items[i]);
-    display::text(buf, 24, y, (i == _sel) ? colour::green : colour::white, 1);
+    _menu_item(_over_items, i, i == _sel, 24, y);
     y += 16;
   }
 
@@ -437,9 +479,11 @@ bool game::_step_zombie(uint8_t z, float ddx, float ddy, float dt) {
   if (d <= 0.5f) {
     return false;
   }
-  float ox = _zombies[z].x, oy = _zombies[z].y;
-  _move_entity(ox, oy, ddx / d * _zombie_speed * dt, ddy / d * _zombie_speed * dt, _zombie_size);
-  return ox != _zombies[z].x || oy != _zombies[z].y;
+  const float bx = _zombies[z].x, by = _zombies[z].y;
+  // _move_entity takes references, so it has to get the real members, not copies
+  _move_entity(_zombies[z].x, _zombies[z].y, ddx / d * _zombie_speed * dt, ddy / d * _zombie_speed * dt,
+               _zombie_size);
+  return _zombies[z].x != bx || _zombies[z].y != by;
 }
 
 void game::_zombie_steer(uint8_t z, float pcx, float pcy, float dt) {

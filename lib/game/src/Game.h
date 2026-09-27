@@ -94,6 +94,8 @@ class game {
 
     static _zombie _zombies[_max_zombies];
     static _bullet _bullets[_max_bullets];
+    static uint8_t _menu_scr; // screen the menu chrome was last painted for, 0xFF = none
+    static uint8_t _menu_sel; // selection currently on screen
     static int16_t _mm_px[1 + _max_zombies]; // minimap blips drawn last frame
     static int16_t _mm_py[1 + _max_zombies];
     static uint8_t _mm_n;
@@ -148,6 +150,9 @@ class game {
     static void _draw_menu(const char* title, const char* const* items, uint8_t count);
     static void _draw_scores();
     static void _draw_game_over();
+    static bool _menu_entered();
+    static void _menu_item(const char* const* items, uint8_t i, bool selected, int16_t x, int16_t y0);
+    static void _menu_cursor(const char* const* items, uint8_t count, int16_t x, int16_t y0);
     static void _start_game();
     static void _enter_menu();
     static void _enter_game_over();
