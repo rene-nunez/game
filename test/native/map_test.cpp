@@ -59,6 +59,33 @@ int main() {
   printf("layout: hud %d + arena %d + panel %d = %d | minimap %dx%d at %d,%d | cells %dx%d\n",
          HUD, AH, PANEL_H, SH, MM_W, MM_H, MM_X, MM_Y, MAX_X / AW + 1, MAX_Y / AH + 1);
 
+  // 0b) the minimap camera-cell frame: the cell is a whole number of tiles, the 1px
+  // outline stays inside the minimap, and every line lands inside the tile strips the
+  // restore repaints (so erasing the frame cannot leave a yellow pixel behind)
+  {
+    const int cell_tw = AW / tilemap::TILE, cell_th = AH / tilemap::TILE;
+    check(AW % tilemap::TILE == 0 && AH % tilemap::TILE == 0, "cell is not a whole number of tiles");
+    check(cell_tw * 3 == tilemap::COLS && cell_th * 3 == tilemap::ROWS, "cells do not tile the map");
+    const int fw = cell_tw * MM_SCALE, fh = cell_th * MM_SCALE;
+    for (int gy = 0; gy < 3; ++gy) {
+      for (int gx = 0; gx < 3; ++gx) {
+        const int fx = MM_X + gx * fw, fy = MM_Y + gy * fh;
+        const int sx = MM_X + gx * fw, sy = MM_Y + gy * fh; // origin of the cell strips
+        const bool inside = fx >= MM_X && fy >= MM_Y && fx + fw <= MM_X + MM_W && fy + fh <= MM_Y + MM_H;
+        // the 4 lines, each inside the first/last tile strip along its axis
+        const bool lines = fy >= sy && fy <= sy + MM_SCALE - 1 &&
+                           fy + fh - 1 >= sy + fh - MM_SCALE && fy + fh - 1 <= sy + fh - 1 &&
+                           fx >= sx && fx <= sx + MM_SCALE - 1 &&
+                           fx + fw - 1 >= sx + fw - MM_SCALE && fx + fw - 1 <= sx + fw - 1;
+        if (!inside || !lines) {
+          printf("FAIL frame %d,%d %dx%d inside=%d lines_in_strips=%d\n", fx, fy, fw, fh, inside, lines);
+        }
+      }
+    }
+    printf("camera cell frame: %d tiles -> %dx%d px, 9 origins inside %dx%d, all lines in strips\n",
+           cell_tw, fw, fh, MM_W, MM_H);
+  }
+
   // 1) spawn rect walkable, and the P tile really is the one we parsed
   const int px = tilemap::spawn_px - 4;
   const int py = tilemap::spawn_py - 4;

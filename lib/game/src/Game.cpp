@@ -27,6 +27,8 @@ game::_bullet game::_bullets[game::_max_bullets];
 int16_t game::_mm_px[1 + game::_max_zombies] = {0};
 int16_t game::_mm_py[1 + game::_max_zombies] = {0};
 uint8_t game::_mm_n = 0;
+int16_t game::_mm_ctx = -1;
+int16_t game::_mm_cty = -1;
 uint8_t game::_player_hp = 0;
 uint8_t game::_wave = 0;
 uint8_t game::_kills = 0;
@@ -722,6 +724,8 @@ int16_t game::_mm_x() {
 
 void game::_panel_init() {
   const int16_t mx = _mm_x();
+  _mm_ctx = -1; // the base repaint wipes the frame and the blips
+  _mm_n = 0;
   display::fill_rect(0, _arena_bottom, (int16_t)display::width(), _panel_h, colour::black);
 
   for (uint8_t r = 0; r < tilemap::ROWS; ++r) { // minimap terrain, same-colour runs
@@ -769,6 +773,39 @@ void game::_draw_panel() {
   }
 }
 
+void game::_mm_restore_row(int16_t tx0, int16_t tx1, int16_t ty) {
+  const int16_t mx = _mm_x();
+  const int16_t sy = _mm_y + ty * _mm_scale;
+  int16_t run_x = tx0;
+  uint16_t run_col = tilemap::color_at(tx0 * tilemap::TILE, ty * tilemap::TILE);
+
+  for (int16_t tx = tx0 + 1; tx <= tx1; ++tx) {
+    const uint16_t col = tilemap::color_at(tx * tilemap::TILE, ty * tilemap::TILE);
+    if (col != run_col) {
+      display::fill_rect(mx + run_x * _mm_scale, sy, (tx - run_x) * _mm_scale, _mm_scale, run_col);
+      run_x = tx;
+      run_col = col;
+    }
+  }
+  display::fill_rect(mx + run_x * _mm_scale, sy, (tx1 - run_x + 1) * _mm_scale, _mm_scale, run_col);
+}
+
+void game::_mm_restore_col(int16_t tx, int16_t ty0, int16_t ty1) {
+  const int16_t mx = _mm_x() + tx * _mm_scale;
+  int16_t run_y = ty0;
+  uint16_t run_col = tilemap::color_at(tx * tilemap::TILE, ty0 * tilemap::TILE);
+
+  for (int16_t ty = ty0 + 1; ty <= ty1; ++ty) {
+    const uint16_t col = tilemap::color_at(tx * tilemap::TILE, ty * tilemap::TILE);
+    if (col != run_col) {
+      display::fill_rect(mx, _mm_y + run_y * _mm_scale, _mm_scale, (ty - run_y) * _mm_scale, run_col);
+      run_y = ty;
+      run_col = col;
+    }
+  }
+  display::fill_rect(mx, _mm_y + run_y * _mm_scale, _mm_scale, (ty1 - run_y + 1) * _mm_scale, run_col);
+}
+
 void game::_mm_dot(int16_t wx, int16_t wy, uint16_t col) {
   if (_mm_n >= (uint8_t)(1 + _max_zombies)) {
     return;
@@ -780,6 +817,34 @@ void game::_mm_dot(int16_t wx, int16_t wy, uint16_t col) {
   ++_mm_n;
 }
 
+void game::_mm_frame() {
+  // the camera snaps to a whole cell, so the frame always lands on even minimap pixels
+  const int16_t cell_w = (int16_t)(display::width() / tilemap::TILE);
+  const int16_t cell_h = (int16_t)(_arena_h / tilemap::TILE);
+  const int16_t ctx = (int16_t)(_cam_x / tilemap::TILE);
+  const int16_t cty = (int16_t)(_cam_y / tilemap::TILE);
+
+  if (_mm_ctx >= 0) { // put the terrain back under the frame drawn last frame
+    _mm_restore_row(_mm_ctx, _mm_ctx + cell_w - 1, _mm_cty);
+    _mm_restore_row(_mm_ctx, _mm_ctx + cell_w - 1, _mm_cty + cell_h - 1);
+    _mm_restore_col(_mm_ctx, _mm_cty, _mm_cty + cell_h - 1);
+    _mm_restore_col(_mm_ctx + cell_w - 1, _mm_cty, _mm_cty + cell_h - 1);
+  }
+
+  const int16_t fx = _mm_x() + ctx * _mm_scale;
+  const int16_t fy = _mm_y + cty * _mm_scale;
+  const int16_t fw = cell_w * _mm_scale;
+  const int16_t fh = cell_h * _mm_scale;
+
+  display::fill_rect(fx, fy, fw, 1, colour::yellow);
+  display::fill_rect(fx, fy + fh - 1, fw, 1, colour::yellow);
+  display::fill_rect(fx, fy, 1, fh, colour::yellow);
+  display::fill_rect(fx + fw - 1, fy, 1, fh, colour::yellow);
+
+  _mm_ctx = ctx;
+  _mm_cty = cty;
+}
+
 void game::_minimap_blips() {
   for (uint8_t i = 0; i < _mm_n; ++i) { // restore the terrain under last frame's dots
     const int16_t tx = _mm_px[i] / tilemap::TILE;
@@ -788,6 +853,8 @@ void game::_minimap_blips() {
                        tilemap::color_at(_mm_px[i], _mm_py[i]));
   }
   _mm_n = 0;
+
+  _mm_frame();
 
   _mm_dot((int16_t)_player.x, (int16_t)_player.y, colour::white);
   for (uint8_t i = 0; i < _max_zombies; ++i) {

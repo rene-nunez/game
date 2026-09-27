@@ -90,6 +90,8 @@ class game {
     static int16_t _mm_px[1 + _max_zombies]; // minimap blips drawn last frame
     static int16_t _mm_py[1 + _max_zombies];
     static uint8_t _mm_n;
+    static int16_t _mm_ctx; // camera cell tile whose frame is on the minimap, -1 = none yet
+    static int16_t _mm_cty;
     static uint8_t _player_hp;
     static uint8_t _wave;
     static uint8_t _kills;
@@ -128,6 +130,9 @@ class game {
     static void _minimap_blips();
     static int16_t _mm_x();
     static void _mm_dot(int16_t wx, int16_t wy, uint16_t col);
+    static void _mm_restore_row(int16_t tx0, int16_t tx1, int16_t ty);
+    static void _mm_restore_col(int16_t tx, int16_t ty0, int16_t ty1);
+    static void _mm_frame();
 
     static int8_t _nav_edge();
     static void _sleep();
