@@ -9,6 +9,7 @@
 #include <Display.h>
 #include "Game.h"
 #include <map.h>
+#include <Sim.h>
 #include "pins.h"
 
 handler game::_handler;
@@ -20,30 +21,15 @@ uint8_t game::_menu_sel = 0;
 
 int16_t game::_cam_x = 0;
 int16_t game::_cam_y = 0;
-int16_t game::_path_tx = -1;
-int16_t game::_path_ty = -1;
-
-constexpr int8_t game::_nbr_x[8];
-constexpr int8_t game::_nbr_y[8];
 int16_t game::_paint_y = game::_arena_h;
-game::_player_data game::_player;
-uint32_t game::_last_ms = 0;
 uint32_t game::_last_frame_ms = 0;
 
-game::_zombie game::_zombies[game::_max_zombies];
-game::_bullet game::_bullets[game::_max_bullets];
-int16_t game::_mm_px[1 + game::_max_zombies] = {0};
-int16_t game::_mm_py[1 + game::_max_zombies] = {0};
+int16_t game::_mm_px[1 + sim::MAX_ZOMBIES] = {0};
+int16_t game::_mm_py[1 + sim::MAX_ZOMBIES] = {0};
 uint8_t game::_mm_n = 0;
 int16_t game::_mm_ctx = -1;
 int16_t game::_mm_cty = -1;
-uint8_t game::_player_hp = 0;
-uint8_t game::_wave = 0;
-uint8_t game::_kills = 0;
-uint32_t game::_last_shot = 0;
-uint32_t game::_last_damage = 0;
 
-uint32_t game::_score = 0;
 uint32_t game::_best = 0;
 uint32_t game::_total_kills = 0;
 
@@ -220,7 +206,10 @@ void game::_draw_scores() {
 }
 
 void game::_start_game() {
-  _restart();
+  sim::reset();
+  _panel_init(); // static panel + minimap terrain, then blips on top
+  _update_camera();
+  _paint_view(); // forced: the game over screen cleared the arena and the camera may not move
   _scr = _screens::playing;
   _menu_invalidate(); // the next pause must repaint its chrome
 }
@@ -232,13 +221,13 @@ void game::_enter_menu() {
 }
 
 void game::_enter_game_over() {
-  _total_kills += _kills;
-  if (_score > _best) {
-    _best = _score;
+  const sim::state& v = sim::view();
+  _total_kills += v.kills;
+  if (v.score > _best) {
+    _best = v.score;
   }
   _rtc.best = _best;
   _rtc.total_kills = _total_kills;
-  _score = 0;
   _scr = _screens::game_over;
   _sel = 0;
 }
@@ -316,22 +305,16 @@ void game::_update_playing() {
   hb.role = _handler.role();
   _handler.send(&hb, sizeof(hb));
 
-  const uint32_t now = millis();
-  float dt = (float)(now - _last_ms) / 1000.0f;
-  if (dt > 0.05f) { // clamp big gaps (serial pauses, menu)
-    dt = 0.05f;
-  }
-  _last_ms = now;
-
   if (input::pause_pressed()) {
     _scr = _screens::pause;
     _sel = 0;
     return;
   }
 
+  // the order matters: the clear-before-sim is what erases entities that die mid-frame
   _render_clear();
-  _sim(dt, now);
-  if (_scr != _screens::playing) { // died this frame, the game-over screen takes over
+  if (!sim::step(millis())) {
+    _enter_game_over(); // sim reports the death, the screen change belongs here
     return;
   }
   _update_camera();
@@ -395,9 +378,10 @@ void game::_draw_game_over() {
   display::text("GAME OVER", (display::width() - 6 * 9 * 2) / 2, 24, colour::red, 2);
 
   char buf[32];
-  snprintf(buf, sizeof(buf), "Score: %lu   Best: %lu", _score, _best);
+  const sim::state& v = sim::view();
+  snprintf(buf, sizeof(buf), "Score: %lu   Best: %lu", v.score, _best);
   display::text(buf, 24, 60, colour::white, 1);
-  snprintf(buf, sizeof(buf), "Wave: %u  Kills: %u", _wave, _kills);
+  snprintf(buf, sizeof(buf), "Wave: %u  Kills: %u", v.wave, v.kills);
   display::text(buf, 24, 76, colour::white, 1);
 
   for (uint8_t i = 0; i < 2; ++i) {
@@ -452,8 +436,9 @@ int16_t game::_cell_cam(int16_t p, int16_t step, int16_t max_cam) {
 
 void game::_update_camera() {
   const int16_t aw = (int16_t)display::width();
-  const int16_t pcx = (int16_t)(_player.x + _player_size / 2);
-  const int16_t pcy = (int16_t)(_player.y + _player_size / 2);
+  const sim::state& v = sim::view();
+  const int16_t pcx = (int16_t)(v.player.x + sim::PLAYER_SIZE / 2);
+  const int16_t pcy = (int16_t)(v.player.y + sim::PLAYER_SIZE / 2);
 
   const int16_t cx = _cell_cam(pcx, aw, (int16_t)(tilemap::WORLD_W - aw));
   const int16_t cy = _cell_cam(pcy, _arena_h, (int16_t)(tilemap::WORLD_H - _arena_h));
@@ -466,91 +451,6 @@ void game::_update_camera() {
   _paint_view(); // the new screen must be repainted from the tilemap
 }
 
-void game::_move_entity(float& x, float& y, float dx, float dy, uint8_t size) {
-  x = constrain(x, 0.0f, (float)(tilemap::WORLD_W - size));
-  y = constrain(y, 0.0f, (float)(tilemap::WORLD_H - size));
-
-  const float nx = x + dx;
-  if (!tilemap::solid_rect((int16_t)nx, (int16_t)y, size, size)) {
-    x = nx;
-  }
-  const float ny = y + dy;
-  if (!tilemap::solid_rect((int16_t)x, (int16_t)ny, size, size)) {
-    y = ny;
-  }
-}
-
-bool game::_step_zombie(uint8_t z, float ddx, float ddy, float dt) {
-  const float d = sqrtf(ddx * ddx + ddy * ddy);
-  if (d <= 0.5f) {
-    return false;
-  }
-  const float bx = _zombies[z].x, by = _zombies[z].y;
-  // _move_entity takes references, so it has to get the real members, not copies
-  _move_entity(_zombies[z].x, _zombies[z].y, ddx / d * _zombie_speed * dt, ddy / d * _zombie_speed * dt,
-               _zombie_size);
-  return _zombies[z].x != bx || _zombies[z].y != by;
-}
-
-void game::_zombie_steer(uint8_t z, float pcx, float pcy, float dt) {
-  const float zcx = _zombies[z].x + _zombie_size / 2.0f;
-  const float zcy = _zombies[z].y + _zombie_size / 2.0f;
-  int16_t ztx = (int16_t)(zcx / tilemap::TILE);
-  int16_t zty = (int16_t)(zcy / tilemap::TILE);
-
-  if (ztx < 0) { // keep every field[] read provably in bounds
-    ztx = 0;
-  } else if (ztx >= tilemap::COLS) {
-    ztx = tilemap::COLS - 1;
-  }
-  if (zty < 0) {
-    zty = 0;
-  } else if (zty >= tilemap::ROWS) {
-    zty = tilemap::ROWS - 1;
-  }
-
-  const uint16_t here = tilemap::field[zty][ztx];
-
-  if (here == 0) {
-    return; // on the player's tile, the contact check lands the hit
-  }
-  if (here == tilemap::UNREACHABLE) { // walled off from the player: straight chase as a fallback
-    _step_zombie(z, pcx - zcx, pcy - zcy, dt);
-    return;
-  }
-
-  uint8_t tried = 0;
-  for (uint8_t attempt = 0; attempt < 3; ++attempt) { // retry the next best tile if one is blocked
-    int8_t best = -1;
-    uint16_t best_d = here;
-    for (uint8_t k = 0; k < 8; ++k) {
-      if (tried & (1u << k)) {
-        continue;
-      }
-      const int16_t nx = (int16_t)(ztx + _nbr_x[k]);
-      const int16_t ny = (int16_t)(zty + _nbr_y[k]);
-      if (nx < 0 || nx >= tilemap::COLS || ny < 0 || ny >= tilemap::ROWS) {
-        continue;
-      }
-      const uint16_t d = tilemap::field[ny][nx];
-      if (d < best_d) {
-        best_d = d;
-        best = (int8_t)k;
-      }
-    }
-    if (best < 0) {
-      return;
-    }
-    tried = (uint8_t)(tried | (1u << best));
-
-    // aim at the centre of the chosen tile, so a diagonal reads as drift not a shuffle
-    const float tx_c = (float)(ztx + _nbr_x[best]) * tilemap::TILE + tilemap::TILE / 2.0f;
-    const float ty_c = (float)(zty + _nbr_y[best]) * tilemap::TILE + tilemap::TILE / 2.0f;
-    if (_step_zombie(z, tx_c - zcx, ty_c - zcy, dt)) {
-      return;
-    }
-  }
-}
 
 void game::_fill_world_run(int16_t wx, int16_t sy, int16_t w, uint16_t col) {
   if (w <= 0 || sy < _hud_h || sy >= _arena_bottom) {
@@ -607,217 +507,19 @@ void game::_fill_world_box(int16_t wx, int16_t wy, uint8_t size, uint16_t col) {
   }
 }
 
-void game::_restart() {
-  for (uint8_t i = 0; i < _max_bullets; ++i) {
-    _bullets[i].active = false;
-  }
 
-  _kills = 0;
-  _wave = 0;
-  _score = 0;
-  _last_shot = 0;
-  _last_damage = 0;
-  _player_hp = _player_hp_max;
-
-  _player = {
-      (float)tilemap::spawn_px - _player_size / 2.0f,
-      (float)tilemap::spawn_py - _player_size / 2.0f,
-  };
-
-  _path_tx = -1; // force a fresh field at the new spawn
-  _path_ty = -1;
-
-  _panel_init(); // static panel + minimap terrain, then blips on top
-  _update_camera();
-  _paint_view(); // forced: the game over screen cleared the arena and the camera may not move
-  _spawn_wave();
-}
-
-void game::_spawn_wave() {
-  ++_wave;
-  for (uint8_t i = 0; i < _max_zombies; ++i) {
-    _zombies[i].active = false;
-  }
-
-  const uint8_t count = (_wave + 3u > _max_zombies) ? _max_zombies : (_wave + 3u);
-  const float px = _player.x + _player_size / 2.0f;
-  const float py = _player.y + _player_size / 2.0f;
-  const uint16_t total = (uint16_t)(tilemap::COLS * tilemap::ROWS);
-  const int16_t off = (int16_t)((tilemap::TILE - _zombie_size) / 2);
-
-  for (uint8_t i = 0; i < count; ++i) {
-    // scan every tile from a random offset, so a spot is always found
-    const uint16_t start = (uint16_t)(esp_random() % total);
-    for (uint16_t k = 0; k < total; ++k) {
-      const uint16_t idx = (uint16_t)((start + k) % total);
-      const int16_t tx = (int16_t)(idx % tilemap::COLS);
-      const int16_t ty = (int16_t)(idx / tilemap::COLS);
-      if (tilemap::solid(tx, ty)) {
-        continue;
-      }
-      const float x = (float)(tx * tilemap::TILE + off);
-      const float y = (float)(ty * tilemap::TILE + off);
-      const float dx = x - px;
-      const float dy = y - py;
-      if (dx * dx + dy * dy < (float)_spawn_min_d2 && k + 1 < total) {
-        continue; // too close to the player, keep looking
-      }
-      _zombies[i] = { x, y, _zombie_hp, true };
-      break;
-    }
-  }
-}
-
-void game::_do_fire(uint32_t now) {
-  if (now - _last_shot < _fire_cd_ms) {
-    return;
-  }
-
-  int16_t best = -1;
-  float best_d = _fire_range * _fire_range;
-  for (uint8_t i = 0; i < _max_zombies; ++i) {
-    if (!_zombies[i].active) {
-      continue;
-    }
-    const float dx = _zombies[i].x - _player.x;
-    const float dy = _zombies[i].y - _player.y;
-    const float d = dx * dx + dy * dy;
-    if (d <= best_d) {
-      best_d = d;
-      best = (int16_t)i;
-    }
-  }
-  if (best < 0) {
-    return;
-  }
-
-  const float bx = _player.x + _player_size / 2.0f;
-  const float by = _player.y + _player_size / 2.0f;
-  float dx = _zombies[best].x + _zombie_size / 2.0f - bx;
-  float dy = _zombies[best].y + _zombie_size / 2.0f - by;
-  const float len = sqrtf(dx * dx + dy * dy);
-  dx /= len;
-  dy /= len;
-
-  for (uint8_t i = 0; i < _max_bullets; ++i) {
-    if (!_bullets[i].active) {
-      _bullets[i] = {
-          bx,
-          by,
-          dx * _bullet_speed,
-          dy * _bullet_speed,
-          true,
-      };
-      _last_shot = now;
-      break;
-    }
-  }
-}
-
-void game::_sim(float dt, uint32_t now) {
-  float dx = input::jx();
-  float dy = input::jy();
-
-  const float len = sqrtf(dx * dx + dy * dy);
-  if (len > 1.0f) { // keep diagonal speed equal
-    dx /= len;
-    dy /= len;
-  }
-
-  _move_entity(_player.x, _player.y, dx * _player_speed * dt, dy * _player_speed * dt, _player_size);
-
-  if (input::fire_pressed()) {
-    _do_fire(now);
-  }
-
-  const float pcx = _player.x + _player_size / 2.0f;
-  const float pcy = _player.y + _player_size / 2.0f;
-
-  for (uint8_t i = 0; i < _max_bullets; ++i) {
-    if (!_bullets[i].active) {
-      continue;
-    }
-    _bullets[i].x += _bullets[i].vx * dt;
-    _bullets[i].y += _bullets[i].vy * dt;
-    if (_bullets[i].x < 0.0f || _bullets[i].x > (float)(tilemap::WORLD_W - _bullet_size) ||
-        _bullets[i].y < 0.0f || _bullets[i].y > (float)(tilemap::WORLD_H - _bullet_size) ||
-        tilemap::solid_rect((int16_t)_bullets[i].x, (int16_t)_bullets[i].y, _bullet_size, _bullet_size)) {
-      _bullets[i].active = false;
-      continue;
-    }
-    for (uint8_t z = 0; z < _max_zombies; ++z) {
-      if (!_zombies[z].active) {
-        continue;
-      }
-      const float zcx = _zombies[z].x + _zombie_size / 2.0f;
-      const float zcy = _zombies[z].y + _zombie_size / 2.0f;
-      const float hdx = _bullets[i].x - zcx;
-      const float hdy = _bullets[i].y - zcy;
-      if (hdx * hdx + hdy * hdy <= _hit_dist * _hit_dist) {
-        _bullets[i].active = false;
-        if (--_zombies[z].hp == 0) {
-          _zombies[z].active = false;
-          ++_kills;
-          _score += _score_per_kill;
-        }
-        break;
-      }
-    }
-  }
-
-  // the distance field only depends on the player's tile, so rebuild it when that changes
-  const int16_t ptx = (int16_t)pcx / tilemap::TILE;
-  const int16_t pty = (int16_t)pcy / tilemap::TILE;
-  if (ptx != _path_tx || pty != _path_ty) {
-    _path_tx = ptx;
-    _path_ty = pty;
-    tilemap::build_field(ptx, pty);
-  }
-
-  for (uint8_t z = 0; z < _max_zombies; ++z) {
-    if (!_zombies[z].active) {
-      continue;
-    }
-    const float zcx = _zombies[z].x + _zombie_size / 2.0f;
-    const float zcy = _zombies[z].y + _zombie_size / 2.0f;
-
-    _zombie_steer(z, pcx, pcy, dt);
-
-    const float cdx = pcx - zcx;
-    const float cdy = pcy - zcy;
-    if (cdx * cdx + cdy * cdy <= _contact_dist * _contact_dist &&
-        now - _last_damage >= _damage_cd_ms) {
-      _last_damage = now;
-      if (_player_hp > 0) {
-        --_player_hp;
-      }
-    }
-  }
-
-  if (_player_hp == 0) {
-    _enter_game_over();
-    return;
-  }
-
-  bool any = false;
-  for (uint8_t i = 0; i < _max_zombies; ++i) {
-    any |= _zombies[i].active;
-  }
-  if (!any) {
-    _spawn_wave();
-  }
-}
 
 void game::_render_clear() {
-  _erase_world_rect((int16_t)_player.x, (int16_t)_player.y, _player_size);
-  for (uint8_t i = 0; i < _max_zombies; ++i) {
-    if (_zombies[i].active) {
-      _erase_world_rect((int16_t)_zombies[i].x, (int16_t)_zombies[i].y, _zombie_size);
+  const sim::state& v = sim::view();
+  _erase_world_rect((int16_t)v.player.x, (int16_t)v.player.y, sim::PLAYER_SIZE);
+  for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
+    if (v.zombies[i].active) {
+      _erase_world_rect((int16_t)v.zombies[i].x, (int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE);
     }
   }
-  for (uint8_t i = 0; i < _max_bullets; ++i) {
-    if (_bullets[i].active) {
-      _erase_world_rect((int16_t)_bullets[i].x, (int16_t)_bullets[i].y, _bullet_size);
+  for (uint8_t i = 0; i < sim::MAX_BULLETS; ++i) {
+    if (v.bullets[i].active) {
+      _erase_world_rect((int16_t)v.bullets[i].x, (int16_t)v.bullets[i].y, sim::BULLET_SIZE);
     }
   }
 }
@@ -826,20 +528,23 @@ void game::_render_draw() {
   char buf[32];
   _paint_step(); // terrain first, so a cut never paints over a live sprite
 
-  snprintf(buf, sizeof(buf), "SCORE %lu", _score);
+  const sim::state& v = sim::view();
+  snprintf(buf, sizeof(buf), "SCORE %lu", v.score);
   display::text(buf, 4, 1, colour::yellow, 1);
   display::text(_handler.role() == ROLE_HOST ? "HOST" : "CLIENT", (int16_t)(display::width() - 34), 1,
                 colour::cyan, 1);
 
-  _fill_world_box((int16_t)_player.x, (int16_t)_player.y, _player_size, colour::blue);
-  for (uint8_t i = 0; i < _max_zombies; ++i) {
-    if (_zombies[i].active) {
-      _fill_world_box((int16_t)_zombies[i].x, (int16_t)_zombies[i].y, _zombie_size, colour::red);
+  _fill_world_box((int16_t)v.player.x, (int16_t)v.player.y, sim::PLAYER_SIZE, colour::blue);
+  for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
+    if (v.zombies[i].active) {
+      _fill_world_box((int16_t)v.zombies[i].x, (int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE,
+                      colour::red);
     }
   }
-  for (uint8_t i = 0; i < _max_bullets; ++i) {
-    if (_bullets[i].active) {
-      _fill_world_box((int16_t)_bullets[i].x, (int16_t)_bullets[i].y, _bullet_size, colour::white);
+  for (uint8_t i = 0; i < sim::MAX_BULLETS; ++i) {
+    if (v.bullets[i].active) {
+      _fill_world_box((int16_t)v.bullets[i].x, (int16_t)v.bullets[i].y, sim::BULLET_SIZE,
+                      colour::white);
     }
   }
 
@@ -885,20 +590,21 @@ void game::_panel_init() {
 }
 
 void game::_draw_panel() {
+  const sim::state& v = sim::view();
   char buf[32];
 
   snprintf(buf, sizeof(buf), "BEST %lu", _best);
   display::text(buf, 4, _arena_bottom + 4, colour::white, 1);
-  snprintf(buf, sizeof(buf), "WAVE %u", _wave);
+  snprintf(buf, sizeof(buf), "WAVE %u", v.wave);
   display::text(buf, 4, _arena_bottom + 16, colour::white, 1);
-  snprintf(buf, sizeof(buf), "KILLS %u", _kills);
+  snprintf(buf, sizeof(buf), "KILLS %u", v.kills);
   display::text(buf, 4, _arena_bottom + 28, colour::white, 1);
 
   display::text("HP", 4, _arena_bottom + 40, colour::white, 1);
-  const uint16_t live = (_player_hp <= 2) ? colour::red : colour::green;
+  const uint16_t live = (v.player_hp <= 2) ? colour::red : colour::green;
   const uint16_t spent = display::rgb565(40, 40, 40);
-  for (uint8_t i = 0; i < _player_hp_max; ++i) {
-    display::fill_rect(30 + (int16_t)i * 10, _arena_bottom + 40, 8, 8, (i < _player_hp) ? live : spent);
+  for (uint8_t i = 0; i < sim::PLAYER_HP_MAX; ++i) {
+    display::fill_rect(30 + (int16_t)i * 10, _arena_bottom + 40, 8, 8, (i < v.player_hp) ? live : spent);
   }
 }
 
@@ -936,7 +642,7 @@ void game::_mm_restore_col(int16_t tx, int16_t ty0, int16_t ty1) {
 }
 
 void game::_mm_dot(int16_t wx, int16_t wy, uint16_t col) {
-  if (_mm_n >= (uint8_t)(1 + _max_zombies)) {
+  if (_mm_n >= (uint8_t)(1 + sim::MAX_ZOMBIES)) {
     return;
   }
   display::fill_rect(_mm_x() + (wx / tilemap::TILE) * _mm_scale, _mm_y + (wy / tilemap::TILE) * _mm_scale,
@@ -985,10 +691,11 @@ void game::_minimap_blips() {
 
   _mm_frame();
 
-  _mm_dot((int16_t)_player.x, (int16_t)_player.y, colour::white);
-  for (uint8_t i = 0; i < _max_zombies; ++i) {
-    if (_zombies[i].active) {
-      _mm_dot((int16_t)_zombies[i].x, (int16_t)_zombies[i].y, colour::red);
+  const sim::state& v = sim::view();
+  _mm_dot((int16_t)v.player.x, (int16_t)v.player.y, colour::white);
+  for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
+    if (v.zombies[i].active) {
+      _mm_dot((int16_t)v.zombies[i].x, (int16_t)v.zombies[i].y, colour::red);
     }
   }
 }
