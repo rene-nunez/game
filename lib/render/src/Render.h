@@ -7,7 +7,7 @@
 // The panel sits next to it and needs the arena origin and the camera, hence those are public.
 class render {
   public:
-    // screen layout: hud strip, arena (world rows), bottom panel
+    // screen layout: hud strip (role badge only), arena (world rows), bottom panel
     static constexpr uint8_t HUD_H = 10;
     static constexpr uint8_t ARENA_H = 160;
     static constexpr int16_t ARENA_BOTTOM = HUD_H + ARENA_H; // panel starts here

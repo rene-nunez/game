@@ -1,5 +1,3 @@
-#include <Arduino.h>
-
 #include <Display.h>
 #include <map.h>
 #include <Sim.h>
@@ -148,14 +146,13 @@ void render::clear() {
   }
 }
 
+// flat actors: one box per entity, nothing to ghost on erase.
+// The HUD carries no render text: game draws only the role badge up there,
+// stats live in the panel.
 void render::draw() {
-  char buf[32];
   repaint_step(); // terrain first, so a cut never paints over a live sprite
 
   const sim::state& v = sim::view();
-  snprintf(buf, sizeof(buf), "SCORE %lu", v.score);
-  display::text(buf, 4, 1, colour::yellow, 1);
-
   _fill_world_box((int16_t)v.player.x, (int16_t)v.player.y, sim::PLAYER_SIZE, colour::blue);
   for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
     if (v.zombies[i].active) {

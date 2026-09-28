@@ -3,7 +3,6 @@
 #include <Display.h>
 #include <map.h>
 #include <Render.h>
-#include <Scores.h>
 #include <Sim.h>
 
 #include "Panel.h"
@@ -25,13 +24,14 @@ void panel::init() {
   display::fill_rect(0, render::ARENA_BOTTOM, (int16_t)display::width(), _panel_h, colour::black);
 
   for (uint8_t r = 0; r < tilemap::ROWS; ++r) { // minimap terrain, same-colour runs
+    // flat base colours for the minimap; only the machines have sprite detail
     const int16_t sy = _mm_y + (int16_t)r * _mm_scale;
     const int16_t wy = (int16_t)r * tilemap::TILE;
     int16_t run_x = 0;
-    uint16_t run_col = tilemap::color_at(0, wy);
+    uint16_t run_col = tilemap::color(tilemap::tile_at(0, wy));
 
     for (uint8_t c = 1; c < tilemap::COLS; ++c) {
-      const uint16_t col = tilemap::color_at((int16_t)c * tilemap::TILE, wy);
+      const uint16_t col = tilemap::color(tilemap::tile_at((int16_t)c * tilemap::TILE, wy));
       if (col != run_col) {
         display::fill_rect(mx + run_x * _mm_scale, sy, (int16_t)(c - run_x) * _mm_scale, _mm_scale,
                            run_col);
@@ -52,11 +52,12 @@ void panel::init() {
 }
 
 void panel::draw() {
+  // stats live on the left of the panel; the HUD carries only the role badge.
   const sim::state& v = sim::view();
   char buf[32];
 
-  snprintf(buf, sizeof(buf), "BEST %lu", scores::best());
-  display::text(buf, 4, render::ARENA_BOTTOM + 4, colour::white, 1);
+  snprintf(buf, sizeof(buf), "SCORE %lu", v.score);
+  display::text(buf, 4, render::ARENA_BOTTOM + 4, colour::yellow, 1);
   snprintf(buf, sizeof(buf), "WAVE %u", v.wave);
   display::text(buf, 4, render::ARENA_BOTTOM + 16, colour::white, 1);
   snprintf(buf, sizeof(buf), "KILLS %u", v.kills);
@@ -74,10 +75,10 @@ void panel::_mm_restore_row(int16_t tx0, int16_t tx1, int16_t ty) {
   const int16_t mx = _mm_x();
   const int16_t sy = _mm_y + ty * _mm_scale;
   int16_t run_x = tx0;
-  uint16_t run_col = tilemap::color_at(tx0 * tilemap::TILE, ty * tilemap::TILE);
+  uint16_t run_col = tilemap::color(tilemap::tile_at(tx0 * tilemap::TILE, ty * tilemap::TILE));
 
   for (int16_t tx = tx0 + 1; tx <= tx1; ++tx) {
-    const uint16_t col = tilemap::color_at(tx * tilemap::TILE, ty * tilemap::TILE);
+    const uint16_t col = tilemap::color(tilemap::tile_at(tx * tilemap::TILE, ty * tilemap::TILE));
     if (col != run_col) {
       display::fill_rect(mx + run_x * _mm_scale, sy, (tx - run_x) * _mm_scale, _mm_scale, run_col);
       run_x = tx;
@@ -90,10 +91,10 @@ void panel::_mm_restore_row(int16_t tx0, int16_t tx1, int16_t ty) {
 void panel::_mm_restore_col(int16_t tx, int16_t ty0, int16_t ty1) {
   const int16_t mx = _mm_x() + tx * _mm_scale;
   int16_t run_y = ty0;
-  uint16_t run_col = tilemap::color_at(tx * tilemap::TILE, ty0 * tilemap::TILE);
+  uint16_t run_col = tilemap::color(tilemap::tile_at(tx * tilemap::TILE, ty0 * tilemap::TILE));
 
   for (int16_t ty = ty0 + 1; ty <= ty1; ++ty) {
-    const uint16_t col = tilemap::color_at(tx * tilemap::TILE, ty * tilemap::TILE);
+    const uint16_t col = tilemap::color(tilemap::tile_at(tx * tilemap::TILE, ty * tilemap::TILE));
     if (col != run_col) {
       display::fill_rect(mx, _mm_y + run_y * _mm_scale, _mm_scale, (ty - run_y) * _mm_scale, run_col);
       run_y = ty;
@@ -147,7 +148,7 @@ void panel::blips() {
     const int16_t tx = _mm_px[i] / tilemap::TILE;
     const int16_t ty = _mm_py[i] / tilemap::TILE;
     display::fill_rect(_mm_x() + tx * _mm_scale, _mm_y + ty * _mm_scale, _mm_scale, _mm_scale,
-                       tilemap::color_at(_mm_px[i], _mm_py[i]));
+                       tilemap::color(tilemap::tile_at(_mm_px[i], _mm_py[i])));
   }
   _mm_n = 0;
 

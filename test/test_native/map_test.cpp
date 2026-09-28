@@ -247,26 +247,26 @@ int main() {
     check(died && bx < 20, "bullet travelling west stops at the border wall");
   }
 
-  // 7) every shop/water/bus tile is reachable-adjacent and renders a distinct colour
+  // 7) every tile kind renders a distinct minimap colour
   {
     int distinct = 0;
     uint16_t seen[16];
-    for (int t = 0; t <= 7; ++t) {
+    for (int t = 0; t <= 3; ++t) {
       bool dup = false;
       for (int i = 0; i < distinct; ++i) dup |= (seen[i] == tilemap::color(t));
       if (!dup) seen[distinct++] = tilemap::color(t);
     }
-    printf("distinct tile colours for tiles 0..7: %d\n", distinct);
-    check(distinct == 8, "each tile kind has its own colour");
+    printf("distinct tile colours for tiles 0..3: %d\n", distinct);
+    check(distinct == 4, "each tile kind has its own colour");
   }
 
-  // 8) flood fill from the spawn: no sealed walkable pocket, ring road is a loop,
-  //    every shop is adjacent to reachable floor
+  // 8) flood fill from the spawn: no sealed walkable pocket, ring lanes are
+  //    open, the vending machine and the roulette touch reachable ground
   {
     const int stx = tilemap::spawn_px / tilemap::TILE, sty = tilemap::spawn_py / tilemap::TILE;
     std::set<std::pair<int, int> > seen;
     std::vector<std::pair<int, int> > q;
-    q.push_back(std::make_pair(stx, sty));
+    q.push_back(std::make_pair(sty, stx)); // (row, col)
     seen.insert(q[0]);
     for (size_t i = 0; i < q.size(); ++i) {
       const int r = q[i].first, c = q[i].second;
@@ -291,15 +291,15 @@ int main() {
     for (int r = 0; r < tilemap::ROWS; ++r) {
       for (int c = 0; c < tilemap::COLS; ++c) {
         const uint8_t t = tilemap::tile_at(c * tilemap::TILE, r * tilemap::TILE);
-        if (t < tilemap::SHOP_SMG || t > tilemap::SHOP_HEAL) continue;
+        if (t != tilemap::VENDING && t != tilemap::ROULETTE) continue;
         ++shops;
         const int dr[4] = {1, -1, 0, 0}, dc[4] = {0, 0, 1, -1};
         for (int k = 0; k < 4; ++k)
           if (seen.count(std::make_pair(r + dr[k], c + dc[k]))) { ++shops_ok; break; }
       }
     }
-    printf("shops %d, adjacent to reachable floor %d\n", shops, shops_ok);
-    check(shops == 4 && shops_ok == 4, "not every shop is reachable");
+    printf("vending+roulette %d, adjacent to reachable ground %d\n", shops, shops_ok);
+    check(shops == 8 && shops_ok == 8, "not every machine tile is reachable");
 
     int ring_open = 1;
     for (int c = 1; c < tilemap::COLS - 1; ++c) {
@@ -429,7 +429,14 @@ int main() {
     }
     printf("field from the spawn: %d tiles, max dist %d, tiles without a descending 4-neighbour %d\n",
            reach, max_d, no_descent);
-    check(reach == 1218, "the field does not reach every walkable tile");
+    check(reach > 1000, "the field reaches too little of the map");
+    {
+      int walkable = 0;
+      for (int r = 0; r < tilemap::ROWS; ++r)
+        for (int c = 0; c < tilemap::COLS; ++c)
+          if (!tilemap::solid(c, r)) ++walkable;
+      check(reach == walkable, "the field does not reach every walkable tile");
+    }
     check(no_descent == 0, "the field has a local minimum, a zombie would stall there");
     check(solid_reached == 0, "the field leaked a distance onto a wall");
     check(max_d < 255, "the field needs more than uint8_t");
