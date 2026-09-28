@@ -67,7 +67,7 @@ void panel::draw() {
   const uint16_t live = (v.player_hp <= 2) ? colour::red : colour::green;
   const uint16_t spent = display::rgb565(40, 40, 40);
   for (uint8_t i = 0; i < sim::PLAYER_HP_MAX; ++i) {
-    display::fill_rect(30 + (int16_t)i * 10, render::ARENA_BOTTOM + 40, 8, 8, (i < v.player_hp) ? live : spent);
+    display::fill_rect(22 + (int16_t)i * 10, render::ARENA_BOTTOM + 40, 8, 8, (i < v.player_hp) ? live : spent);
   }
 }
 

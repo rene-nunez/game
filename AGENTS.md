@@ -34,7 +34,7 @@ Libraries resolve via LDF `chain` (follow `#include`). Every `lib/*/src/*.cpp` i
 
 ## Display (TFT)
 
-- glass is a 240x320 ST7789 IPS; `include/tft_setup.h` sets `ST7789_DRIVER`, `TFT_INVERSION_OFF` (without it 0x0000 renders as white, everything washed), `LOAD_GLCD`, 40 MHz SPI
+- glass is a 240x320 ST7789 IPS; `include/tft_setup.h` sets `ST7789_DRIVER`, `TFT_INVERSION_OFF` (without it 0x0000 renders as white, everything washed), `TFT_RGB_ORDER TFT_BGR` (this panel is BGR: without it R and B swap — cyan role reads yellow, brass roulette blue, timber blue-grey, teal lake yellow), `LOAD_GLCD`, 40 MHz SPI
 - world is 960x480 (60x30 tiles x 16px), parsed in `tilemap::init`; every entity lives in **world px**; screen bands are the only screen-space things: HUD strip 10px (role badge only), arena 160px, panel 70px (10+160+70 = 240 exactly)
 - screen→world: `sx = wx - render::_cam_x`, `sy = wy - render::_cam_y + render::HUD_H`; arena is 320x160, camera clamped to x[0,640] y[0,320] → an exact **3x3 grid of cells**, x{0,320,640} y{0,160,320}
 - the map is all grass with 2-tile clear lanes on the ring, so a hard cut always lands on open grass there; a maze interconnects every district including the center, which holds a 2x2 vending machine and a 2x2 prize wheel; 74% walkable, no sealed pockets (flood-filled in `test/test_native/map_test.cpp`). The machine sprites must read at 32px (verify with an ASCII dump of `color_at`, not by eye on code)

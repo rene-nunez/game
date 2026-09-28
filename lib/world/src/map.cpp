@@ -82,13 +82,13 @@ namespace tilemap {
   uint16_t color(uint8_t t) {
     switch (t) {
       case WALL:
-        return display::rgb565(150, 120, 85); // maze timber
+        return display::rgb565(148, 138, 120); // muted cream-grey stone
       case VENDING:
-        return display::rgb565(40, 150, 200); // vending teal
+        return display::rgb565(40, 150, 200); // vending teal (untouched)
       case ROULETTE:
-        return display::rgb565(220, 200, 60); // prize wheel gold
+        return display::rgb565(175, 145, 75); // aged brass
       default:
-        return display::rgb565(46, 95, 55); // meadow grass
+        return display::rgb565(85, 95, 65); // muted sage grass
     }
   }
 
@@ -162,30 +162,30 @@ namespace tilemap {
         return display::rgb565(25, 60, 75); // dark glass
       }
       case ROULETTE: {
-        // 2x2 prize wheel (32x32): rim + 8 segments + pegs + hub + pointer.
+        // 2x2 prize wheel (32x32), oxidized: bronze segments, rust details.
         const int16_t gx = (tile_at(wx - TILE, wy) == ROULETTE ? 16 : 0) + px;
         const int16_t gy = (tile_at(wx, wy - TILE) == ROULETTE ? 16 : 0) + py;
         const int16_t dx = gx - 16;
         const int16_t dy = gy - 13;
         const int16_t d2 = dx * dx + dy * dy;
         if (gy >= 27) {
-          if (gx >= 14 && gx <= 17) return display::rgb565(90, 60, 35); // post
+          if (gx >= 14 && gx <= 17) return display::rgb565(95, 65, 40); // post
           if (gy >= 29 && gx >= 10 && gx <= 21) {
-            return display::rgb565(70, 45, 25); // feet
+            return display::rgb565(75, 50, 32); // feet
           }
           return color(FLOOR); // grass shows through around the stand
         }
         if (gy <= 3 && gx >= 14 && gx <= 17) {
-          return display::rgb565(220, 50, 45); // pointer tip
+          return display::rgb565(150, 55, 40); // pointer tip
         }
         if (d2 > 196) {
           return color(FLOOR); // grass shows through outside the wheel
         }
         if (d2 > 169) {
-          return display::rgb565(140, 40, 35); // rim
+          return display::rgb565(105, 65, 45); // rim
         }
         if (d2 <= 9) {
-          return display::rgb565(250, 245, 220); // hub
+          return display::rgb565(215, 205, 185); // hub
         }
         int16_t ax = dx < 0 ? -dx : dx;
         int16_t ay = dy < 0 ? -dy : dy;
@@ -200,9 +200,9 @@ namespace tilemap {
           zone = dy > 0 ? 3 : 5;
         }
         if (d2 >= 121 && d2 <= 144 && (((gx + gy) & 3) == 0)) {
-          return display::rgb565(245, 245, 245); // pegs
+          return display::rgb565(210, 198, 175); // bone pegs
         }
-        return (zone & 1) ? display::rgb565(200, 60, 55) : base;
+        return (zone & 1) ? display::rgb565(150, 65, 45) : base;
       }
       default: {
         if (px == 0 || px == 15 || py == 0 || py == 15) {
