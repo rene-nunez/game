@@ -8,6 +8,7 @@
 #define TFT_SCLK 18
 #define TFT_BL 21
 #define TFT_MISO 19
+#define SD_CS 22 // microsd chip select
 
 // joystick
 #define JOY_X 32
@@ -18,3 +19,6 @@
 #define BTN_RELOAD 14
 #define BTN_INTERACT 15
 #define BTN_PAUSE 27
+
+// buzzer
+#define PIN_BUZZ 26
