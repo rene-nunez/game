@@ -4,7 +4,7 @@
 #include "pins.h"
 
 constexpr uint16_t _adc_center = 2047;
-constexpr float _deadzone = 0.08f;
+constexpr float _deadzone = 0.3f;
 constexpr float _smoothing = 0.5f;
 constexpr uint32_t _debounce_ms = 50;
 
