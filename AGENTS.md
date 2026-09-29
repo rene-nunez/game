@@ -10,7 +10,7 @@
 - 250 bytes/msg max; frequent state must be binary, not JSON
 - host is authoritative (runs game logic, sends state); client sends inputs
 - fixed custom MACs; role picks the peer
-- role comes from build: `pio run -e host` | `-e client` (flag `DEVICE_ROLE`); `include/config.h` only validates it
+- role comes from build: `pio run -e host` | `-e client` (flag `DEVICE_ROLE`, validated in `src/main.cpp`)
 
 ## Pins
 
@@ -21,7 +21,7 @@
 
 ## Layout
 
-- `include/` — `pins.h`, `tft_setup.h` (ST7789 + `TFT_INVERSION_OFF` + `TFT_RGB_ORDER TFT_BGR`, panel BGR), `config.h`
+- `include/` — `pins.h`, `tft_setup.h` (ST7789 + `TFT_INVERSION_OFF` + `TFT_RGB_ORDER TFT_BGR`, panel BGR)
 - `lib/network` — raw ESP-NOW, no message logic; `lib/protocol` — `msg_type` + packed structs; `lib/handler` — typed routing/dispatch
 - `lib/display` — `display` + `colour`; the only place TFT_eSPI is used
 - `lib/input` — joystick (ADC1) + buttons (debounce + edge)
