@@ -49,7 +49,7 @@ class game {
 
     static void _update_menu();
     static void _update_mode();
-    static void _update_scores();
+    static void _update_points();
     static void _update_playing();
     static void _update_pause();
     static void _update_game_over();

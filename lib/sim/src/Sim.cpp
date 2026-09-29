@@ -23,12 +23,10 @@ void sim::reset() {
 
   _s.kills = 0;
   _s.wave = 0;
-  _s.score = 0;
-  _s.peak = 0;
+  _s.points = 0;
   _s.gun = weapon::pistol;
-  _s.dmg_mult = 1;
-  _s.dmg_until = 0;
-  _s.speed_until = 0;
+  _s.dmg_lvl = 0;
+  _s.spd_lvl = 0;
   _s.last_event = event::none;
   _last_shot = 0;
   _last_damage = 0;
@@ -161,11 +159,25 @@ void sim::_spawn_wave() {
       if (dx * dx + dy * dy < (float)spawn_min_d2 && k + 1 < total) {
         continue; // too close to the player, keep looking
       }
-      _s.zombies[i] = { x, y, zombie_hp, true, actor_kind::normal };
+      _s.zombies[i] = { x, y, _zombie_hp(_s.wave), true, actor_kind::normal };
       break;
     }
   }
   _s.last_event = event::wave;
+}
+
+uint8_t sim::_zombie_hp(uint8_t wave) {
+  return (uint8_t)(2u + (uint16_t)wave / 2u); // tougher every two waves
+}
+
+uint8_t sim::_eff_dmg(uint8_t base, uint8_t lvl) {
+  const float dmg = (float)base * (1.0f + 0.2f * (float)lvl);
+  const uint8_t eff = (uint8_t)(dmg + 0.5f); // half-up: 1-dmg guns step up at lvl 3 and 5
+  return eff < 1 ? 1 : eff;
+}
+
+float sim::_spd_mult(uint8_t lvl) {
+  return 1.0f + 0.08f * (float)lvl; // +8%/level, +40% at max like the old buff
 }
 
 uint32_t sim::_fire_cd(weapon w) {
@@ -235,7 +247,7 @@ void sim::_do_fire(uint32_t now) {
   dx /= len;
   dy /= len;
 
-  const uint8_t dmg = (uint8_t)(_base_dmg(_s.gun) * _s.dmg_mult);
+  const uint8_t dmg = _eff_dmg(_base_dmg(_s.gun), _s.dmg_lvl);
   uint8_t fired = 0;
   if (_s.gun == weapon::shotgun) {
     // 3 pellets fanned around the aim: straight, -0.15rad, +0.15rad
@@ -260,10 +272,6 @@ bool sim::step(uint32_t now) {
   _last_ms = now;
   _s.last_event = event::none; // buys after step() overwrite this for their frame
 
-  if (now >= _s.dmg_until) {
-    _s.dmg_mult = 1; // damage buff expired (or never bought: dmg_until == 0)
-  }
-
   float dx = input::jx();
   float dy = input::jy();
 
@@ -273,7 +281,7 @@ bool sim::step(uint32_t now) {
     dy /= len;
   }
 
-  const float spd = (now < _s.speed_until) ? player_speed * speed_mult : player_speed;
+  const float spd = player_speed * _spd_mult(_s.spd_lvl);
   _move_entity(_s.player.x, _s.player.y, dx * spd * dt, dy * spd * dt, PLAYER_SIZE);
 
   if (input::fire_pressed()) {
@@ -310,10 +318,7 @@ bool sim::step(uint32_t now) {
           _s.zombies[z].hp = 0;
           _s.zombies[z].active = false;
           ++_s.kills;
-          _s.score += score_per_kill;
-          if (_s.score > _s.peak) {
-            _s.peak = _s.score; // spending never lowers the peak
-          }
+          _s.points += points_per_kill;
         } else {
           _s.zombies[z].hp = (uint8_t)(_s.zombies[z].hp - dmg);
         }
@@ -367,48 +372,63 @@ bool sim::step(uint32_t now) {
   return true;
 }
 
+uint32_t sim::price_for(uint32_t base, uint8_t lvl) {
+  return base + LVL_PRICE_STEP * (uint32_t)lvl;
+}
+
 bool sim::buy_heal(uint32_t now) {
   (void)now;
-  if (_s.player_hp >= PLAYER_HP_MAX || _s.score < PRICE_HEAL) {
+  if (_s.player_hp >= PLAYER_HP_MAX || _s.points < PRICE_HEAL) {
     _s.last_event = event::denied; // full HP or broke
     return false;
   }
-  _s.score -= PRICE_HEAL; // exact score pays
+  _s.points -= PRICE_HEAL; // exact points pay
   _s.player_hp = (uint8_t)(_s.player_hp + 2 > PLAYER_HP_MAX ? PLAYER_HP_MAX : _s.player_hp + 2);
   _s.last_event = event::buy_heal;
   return true;
 }
 
 bool sim::buy_damage(uint32_t now) {
-  if (_s.score < PRICE_DMG) {
+  (void)now;
+  if (_s.dmg_lvl >= MAX_LVL) {
+    _s.last_event = event::denied; // capped, like a full HP bar
+    return false;
+  }
+  const uint32_t price = price_for(PRICE_DMG, _s.dmg_lvl);
+  if (_s.points < price) {
     _s.last_event = event::denied;
     return false;
   }
-  _s.score -= PRICE_DMG;
-  _s.dmg_mult = 2;
-  _s.dmg_until = now + DMG_MS;
+  _s.points -= price;
+  ++_s.dmg_lvl; // permanent, part of the character
   _s.last_event = event::buy_dmg;
   return true;
 }
 
 bool sim::buy_speed(uint32_t now) {
-  if (_s.score < PRICE_SPD) {
+  (void)now;
+  if (_s.spd_lvl >= MAX_LVL) {
+    _s.last_event = event::denied; // capped, like a full HP bar
+    return false;
+  }
+  const uint32_t price = price_for(PRICE_SPD, _s.spd_lvl);
+  if (_s.points < price) {
     _s.last_event = event::denied;
     return false;
   }
-  _s.score -= PRICE_SPD;
-  _s.speed_until = now + SPD_MS;
+  _s.points -= price;
+  ++_s.spd_lvl; // permanent, part of the character
   _s.last_event = event::buy_spd;
   return true;
 }
 
 bool sim::roll_roulette(uint32_t now) {
   (void)now;
-  if (_s.score < PRICE_ROLL) {
+  if (_s.points < PRICE_ROLL) {
     _s.last_event = event::denied;
     return false;
   }
-  _s.score -= PRICE_ROLL;
+  _s.points -= PRICE_ROLL;
   // roulette-only pool: the pistol is the starter and never comes back
   switch (esp_random() % 3) {
     case 0: _s.gun = weapon::smg; break;

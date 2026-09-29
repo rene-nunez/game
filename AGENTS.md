@@ -26,11 +26,11 @@
 - `lib/display` — `display` + `colour`; the only place TFT_eSPI is used
 - `lib/input` — joystick (ADC1) + buttons (debounce + edge)
 - `lib/world` — `tilemap`: 60x30 all-grass maze, `_art` rows, wall queries, spawn, BFS `field`; tiles: grass (only walkable), hedge walls, three 2x2 vendings (H heal green, D damage red, S speed blue) + 2x2 roulette (visual 32px sprites in `color_at`, price tags in `render`)
-- `lib/sim` — player, zombies, bullets, waves, score-as-wallet, weapons, buffs; owns state, never touches screen/menus/network/sound (emits `last_event`)
-- `lib/render` — camera, terrain repaint, arena sprites + shop price tags; reads `sim::view()` + `tilemap` (tags are tile-anchored)
-- `lib/panel` — bottom strip: `SCORE/WAVE/KILLS/GUN` + HP pips + buff timers + shop hint + 2px/tile minimap; reads `render` + `sim::view()`
+- `lib/sim` — player, zombies, bullets, waves, points-as-wallet, weapons, levels; owns state, never touches screen/menus/network/sound (emits `last_event`)
+- `lib/render` — camera, terrain repaint, arena sprites + shop price tags + centred prompt strip; reads `sim::view()` + `tilemap` (tags are tile-anchored)
+- `lib/panel` — bottom strip: `POINTS/W+K/GUN` + HP/DMG/SPD pips + 2px/tile minimap; reads `render` + `sim::view()`
 - `lib/buzz` — passive-buzzer jingles, non-blocking (`update(now)`); `game` fires it from `sim::last_event`
-- `lib/scores` — RTC-backed `{best, total_kills}` today; the microSD seam (same 4 functions)
+- `lib/points` — RTC-backed `{best, total_kills}` today (best = wallet at death); the microSD seam (same 4 functions)
 - `lib/screens` — `id` enum + item tables + menu chrome
 - `lib/game` — state machine + input edges + **frame order**; only place calling sim + render + panel + screens + buzz together
 - `src/main.cpp` — `game::begin(DEVICE_ROLE)` + `game::update()`
@@ -50,28 +50,28 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 
 ## World / sim contracts
 
-- `_art` rows exactly `COLS` chars; map: all grass + 2-tile ring lanes, maze everywhere, center holds 3 vendings + roulette; 1303 walkable (72%), 0 orphans, machines 16/16 reachable (4 per shop), BFS max 76, 0 local minima (all in `run.sh`)
+- `_art` rows exactly `COLS` chars; map: all grass + 2-tile ring lanes, maze everywhere, center holds 3 vendings + roulette; 1308 walkable (73%), 0 orphans, machines 16/16 reachable (4 per shop), BFS max 76, 0 local minima (all in `run.sh`)
 - machine sprites must read at 32px (ASCII dump of `color_at`, never by eye)
 - `tilemap::solid_rect` gates movement per axis (X then Y); bullets die on non-walkable
 - zombie spawns: random-offset scan, first walkable tile >= 100px away
 - BFS `field` rebuilds only when the player's **tile** changes; `_zombie_steer` descends to the best of 8 neighbours' centres (3 retries, direct chase on `UNREACHABLE`); pass `float&` members (never copies) to `_move_entity`
-- `sim` exposes one read-only `view()` (`reset()`, `step(now)->bool`); death reported by return value, screens raised by caller; score zeroed only in `reset()`
-- economy: score is the spendable wallet; `peak` tracks max wallet for best; `render`/`panel` never move state; `game` owns shop proximity + `INTERACT` edge + `buzz` firing from `last_event`
+- `sim` exposes one read-only `view()` (`reset()`, `step(now)->bool`); death reported by return value, screens raised by caller; points zeroed only in `reset()`
+- economy: points are the spendable wallet; best is the wallet at death (earned minus shop spending); `render`/`panel` never move state; `game` owns shop proximity + `INTERACT` edge + `buzz` firing from `last_event`
 
 ## Shop (F1) — agreed prices/stats
 
-- vending (proximity + `INTERACT`, one machine per buff): **H heal green 100** (+2 HP), **D damage red x2 60s 150**, **S speed blue x1.4 30s 120**; denied hint when broke; price tags float over the machines
+- vending (proximity + `INTERACT`, one machine per buff): **H heal green 100** (+2 HP), **D damage red +20%/lvl max5 base 150**, **S speed blue +8%/lvl max5 base 120**; level price = base + 250·lvl; denied/MAX hints; price tags float over the machines
 - roulette 100 → random weapon; weapons are **roulette-only, never bought**; start pistol (dmg1/cd500); SMG (dmg1/cd180); shotgun (3 pellets/cd900); rifle (dmg3/cd800)
-- panel shows `GUN xxx` (text, no sprites); buffs expire by `speed_until`/damage timer
-- zombies: normal (40/hp2/+10), **runner** (70/hp1/+15, orange), **boss** every wave%5==0 (30/hp25/+200, purple, 1 of 8 slots); `render` colours by `actor.kind`
+- panel shows `POINTS/W+K/GUN` + HP/DMG/SPD pips (text, no sprites); prompt is the arena-centred strip owned by `render`
+- zombies: normal (40/hp 2+wave/2/+10), **runner** (70/hp1/+15, orange), **boss** every wave%5==0 (30/hp25/+200, purple, 1 of 8 slots); `render` colours by `actor.kind`
 
 ## Roadmap
 
-- **F1 shop+roulette** ✅ done: `sim::state` += `weapon/dmg_mult/speed_until/peak/last_event` (+`actor.kind`); `game` proximity+buy; `panel` hint+`GUN`; verify exact-score buys, expiry, peak-after-spend on glass
+- **F1 shop+roulette** ✅ done: `sim::state` += `weapon/dmg_lvl/spd_lvl/points/last_event` (+`actor.kind`); `game` proximity+buy; `panel` pips+`GUN`; verify exact-points buys, levels, wallet-best on glass
 - **F2 Z32+intro+screens**: `ZOMBIES`→`Z32` strings + README (repo path unchanged); `screens::id` += `logo` (centered, timed/skippable) → `team` (names TBD by user) → `menu`
 - **F3 buzzer**: `lib/buzz` on GPIO 26, jingles menu/shoot/buy/roulette/hurt/wave/game-over, fired from `last_event`
 - **F4 runners+boss**: kinds, waves, colours, cap-8 slots; balance on glass
-- **F5 microSD**: share TFT SPI + CS22; `Scores.cpp` → JSON `{best,total_kills}` (best = peak wallet); same 4 functions; needs hardware
+- **F5 microSD**: share TFT SPI + CS22; `Points.cpp` → JSON `{best,total_kills}` (best = wallet at death); same 4 functions; needs hardware
 - **F6 P3 net**: packed `game_state` ~120B (u16 positions + bit flags, no floats) + `player_input` 4B; host authoritative, client inputs; Solo/Multi handshake; 2-board test with logs. Runs last, once `sim::state` is final
 
 ## Add a message

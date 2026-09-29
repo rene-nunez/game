@@ -12,11 +12,6 @@ int16_t panel::_mm_py[1 + sim::MAX_ZOMBIES] = {0};
 uint8_t panel::_mm_n = 0;
 int16_t panel::_mm_ctx = -1; // camera cell tile whose frame is on the minimap, -1 = none yet
 int16_t panel::_mm_cty = -1;
-const char* panel::_hint = nullptr;
-
-void panel::hint(const char* msg) {
-  _hint = msg;
-}
 
 int16_t panel::_mm_x() {
   return (int16_t)display::width() - _mm_w - _mm_gap;
@@ -26,7 +21,6 @@ void panel::init() {
   const int16_t mx = _mm_x();
   _mm_ctx = -1; // the base repaint wipes the frame and the blips
   _mm_n = 0;
-  _hint = nullptr;
   display::fill_rect(0, render::ARENA_BOTTOM, (int16_t)display::width(), _panel_h, colour::black);
 
   for (uint8_t r = 0; r < tilemap::ROWS; ++r) { // minimap terrain, same-colour runs
@@ -57,50 +51,39 @@ void panel::init() {
   _mm_n = 0;
 }
 
+void panel::_pip_row(int16_t y, const char* label, uint8_t lvl, uint8_t max, uint16_t col) {
+  display::text(label, 4, y, colour::white, 1);
+  const uint16_t spent = display::rgb565(40, 40, 40);
+  for (uint8_t i = 0; i < max; ++i) {
+    display::fill_rect(28 + (int16_t)i * 10, y, 8, 8, (i < lvl) ? col : spent);
+  }
+}
+
 void panel::draw() {
   // stats live on the left of the panel; the HUD carries only the role badge.
+  // Every text row is cleared first: numbers and names shrink (POINTS 200 -> 50,
+  // SHOTGUN -> SMG) and overpainting alone would leave ghost digits behind.
   const sim::state& v = sim::view();
+  const int16_t mx = _mm_x();
   char buf[32];
 
-  snprintf(buf, sizeof(buf), "SCORE %lu", v.score);
+  display::fill_rect(0, render::ARENA_BOTTOM + 4, mx, 8, colour::black);
+  snprintf(buf, sizeof(buf), "POINTS %lu", v.points);
   display::text(buf, 4, render::ARENA_BOTTOM + 4, colour::yellow, 1);
-  snprintf(buf, sizeof(buf), "WAVE %u", v.wave);
-  display::text(buf, 4, render::ARENA_BOTTOM + 16, colour::white, 1);
-  snprintf(buf, sizeof(buf), "KILLS %u", v.kills);
-  display::text(buf, 4, render::ARENA_BOTTOM + 28, colour::white, 1);
 
-  display::text("HP", 4, render::ARENA_BOTTOM + 40, colour::white, 1);
-  const uint16_t live = (v.player_hp <= 2) ? colour::red : colour::green;
-  const uint16_t spent = display::rgb565(40, 40, 40);
-  for (uint8_t i = 0; i < sim::PLAYER_HP_MAX; ++i) {
-    display::fill_rect(22 + (int16_t)i * 10, render::ARENA_BOTTOM + 40, 8, 8, (i < v.player_hp) ? live : spent);
-  }
+  display::fill_rect(0, render::ARENA_BOTTOM + 14, mx, 8, colour::black);
+  snprintf(buf, sizeof(buf), "W%u K%u", v.wave, v.kills);
+  display::text(buf, 4, render::ARENA_BOTTOM + 14, colour::white, 1);
 
-  // gun + live buffs + shop prompt. The row is cleared first: gun names and
-  // countdowns shrink ("SHOTGUN" -> "SMG", "D9" -> "D10" no, "S3" -> gone).
-  const int16_t mx = _mm_x();
-  const int16_t gy = render::ARENA_BOTTOM + 52;
-  display::fill_rect(0, gy, mx, 8, colour::black);
-  char gun_buf[28];
-  int n = snprintf(gun_buf, sizeof(gun_buf), "GUN %s", sim::gun_name());
-  const uint32_t now = millis();
-  if (n > 0 && (size_t)n < sizeof(gun_buf)) {
-    if (now < v.dmg_until) {
-      n += snprintf(gun_buf + n, sizeof(gun_buf) - (size_t)n, " D%us",
-                    (unsigned)((v.dmg_until - now + 999u) / 1000u));
-    }
-    if (n > 0 && (size_t)n < sizeof(gun_buf) && now < v.speed_until) {
-      n += snprintf(gun_buf + n, sizeof(gun_buf) - (size_t)n, " S%us",
-                    (unsigned)((v.speed_until - now + 999u) / 1000u));
-    }
-  }
-  display::text(gun_buf, 4, gy, colour::white, 1);
+  display::fill_rect(0, render::ARENA_BOTTOM + 24, mx, 8, colour::black);
+  snprintf(buf, sizeof(buf), "GUN %s", sim::gun_name());
+  display::text(buf, 4, render::ARENA_BOTTOM + 24, colour::white, 1);
 
-  const int16_t hy = render::ARENA_BOTTOM + 61; // 61 + 8 = 69, still inside the 70px panel
-  display::fill_rect(0, hy, mx, 8, colour::black);
-  if (_hint != nullptr && _hint[0] != '\0') {
-    display::text(_hint, 4, hy, colour::yellow, 1);
-  }
+  const uint16_t hp_col = (v.player_hp <= 2) ? colour::red : colour::green;
+  _pip_row(render::ARENA_BOTTOM + 34, "HP", v.player_hp, sim::PLAYER_HP_MAX, hp_col);
+  _pip_row(render::ARENA_BOTTOM + 44, "DMG", v.dmg_lvl, sim::MAX_LVL, colour::red);
+  _pip_row(render::ARENA_BOTTOM + 54, "SPD", v.spd_lvl, sim::MAX_LVL,
+           display::rgb565(60, 130, 230));
 }
 
 void panel::_mm_restore_row(int16_t tx0, int16_t tx1, int16_t ty) {

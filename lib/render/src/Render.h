@@ -16,16 +16,19 @@ class render {
     static void repaint_step(); // paint up to PAINT_CHUNK pending arena rows
     static void update_camera();
     static void clear();       // erase the entities through the tilemap colours
-    static void draw();        // terrain, hud score and the entity boxes
+    static void draw();        // terrain, entities, tags and the prompt
+    static void prompt(const char* msg); // transient shop prompt, painted centred by draw()
 
     static int16_t cam_x();
     static int16_t cam_y();
 
   private:
     static constexpr uint8_t PAINT_CHUNK = 80; // arena rows repainted per frame
+    static constexpr int16_t _prompt_h = 10;   // prompt strip height at the arena bottom
 
     static int16_t _cam_x, _cam_y;
     static int16_t _paint_y; // next arena row to repaint, ARENA_H when idle
+    static const char* _prompt; // shop prompt for this frame, null = none (set by game)
 
     static int16_t _cell_cam(int16_t p, int16_t step, int16_t max_cam);
     static void _fill_world_run(int16_t wx, int16_t sy, int16_t w, uint16_t col);

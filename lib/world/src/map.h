@@ -19,8 +19,8 @@ namespace tilemap {
 
   // Super-minimal green village: 60x30 all-grass with a maze interconnecting
   // every district, including the center, which holds three 2x2 vending machines
-  // (H heal green, D damage red, S speed blue) and a 2x2 prize wheel. 2-tile
-  // clear lanes on the ring double as the camera cut lines, so a hard cut always
+  // (H heal green, D damage red, S speed blue) and a 2x2 prize wheel side by side.
+  // 2-tile clear lanes on the ring double as the camera cut lines, so a hard cut
   // lands on open grass there; interior cuts may land on maze wall.
   // Legend: # wall  . grass  H heal  D damage  S speed  R roulette  P spawn
   // (V still parses as heal, for older art.)
@@ -38,10 +38,10 @@ namespace tilemap {
 "#..........................................................#",
 "#..........................................................#",
 "#.......###..###........############........##########.....#",
-"#....####......#........#..........#........#..........#...#",
-"#....#......#..#....DD.....HH..RR..#..SS....######.....#...#",
-"#....#..#####..#....DD.....HH..RR.....SS....#..........#...#",
-"#....#..#......#........#..........#........#..#...#####...#",
+"#....####......#............................#..........#...#",
+"#....#......#..#.......DD..HH..RR..SS.......######.....#...#",
+"#....#..#####..#.......DD..HH..RR..SS.......#..........#...#",
+"#....#..#......#............................#..#...#####...#",
 "#.......................####...#####...........#.....#.#...#",
 "#...#########..............................#######...#.....#",
 "#..........................................................#",

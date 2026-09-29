@@ -2,7 +2,7 @@
 #include <cstring>
 
 #include <Display.h>
-#include <Scores.h>
+#include <Points.h>
 #include <Sim.h>
 
 #include "Screens.h"
@@ -13,7 +13,7 @@ namespace {
   constexpr int16_t _menu_x = 16, _menu_y = 56, _menu_row = 16;
   constexpr int16_t _over_x = 24, _over_y = 110; // the game over screen is indented
 
-  const char* const _menu_items[] = { "Start Game", "Scores", "Exit" };
+  const char* const _menu_items[] = { "Start Game", "Points", "Exit" };
   const char* const _mode_items[] = { "Solo", "Multiplayer", "Back" };
   const char* const _pause_items[] = { "Continue", "Restart", "Exit to Menu" };
   const char* const _over_items[] = { "Restart", "Menu" };
@@ -29,7 +29,7 @@ namespace {
   const _list _tables[] = {
     {"ZOMBIES", _menu_items, 3, false},   // menu
     {"GAME MODE", _mode_items, 3, false}, // mode
-    {"SCORES", nullptr, 0, false},        // scores
+    {"POINTS", nullptr, 0, false},        // points
     {nullptr, nullptr, 0, false},         // playing
     {"PAUSED", _pause_items, 3, false},   // pause
     {"GAME OVER", _over_items, 2, true},  // game over
@@ -75,13 +75,13 @@ namespace {
     _list_rows(t, sel);
   }
 
-  void _full_scores() {
-    _background("SCORES", colour::yellow);
+  void _full_points() {
+    _background("POINTS", colour::yellow);
 
     char buf[32];
-    snprintf(buf, sizeof(buf), "Best score: %lu", scores::best());
+    snprintf(buf, sizeof(buf), "Best points: %lu", points::best());
     display::text(buf, 16, 60, colour::white, 1);
-    snprintf(buf, sizeof(buf), "Total kills: %lu", scores::total_kills());
+    snprintf(buf, sizeof(buf), "Total kills: %lu", points::total_kills());
     display::text(buf, 16, 76, colour::white, 1);
 
     display::text("FIRE/PAUSE: back", 16, 120, colour::white, 1);
@@ -92,7 +92,7 @@ namespace {
 
     char buf[32];
     const sim::state& v = sim::view();
-    snprintf(buf, sizeof(buf), "Score: %lu   Best: %lu", v.score, scores::best());
+    snprintf(buf, sizeof(buf), "Points: %lu   Best: %lu", v.points, points::best());
     display::text(buf, 24, 60, colour::white, 1);
     snprintf(buf, sizeof(buf), "Wave: %u  Kills: %u", v.wave, v.kills);
     display::text(buf, 24, 76, colour::white, 1);
@@ -124,7 +124,7 @@ void screens::paint(id scr, uint8_t sel) {
 
   if (_painted_scr != (uint8_t)scr) {
     switch (scr) {
-      case id::scores: _full_scores(); break;
+      case id::points: _full_points(); break;
       case id::game_over: _full_game_over(sel); break;
       default: _full_menu(t, sel); break;
     }

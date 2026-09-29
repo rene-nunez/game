@@ -7,6 +7,11 @@
 int16_t render::_cam_x = 0;
 int16_t render::_cam_y = 0;
 int16_t render::_paint_y = render::ARENA_H;
+const char* render::_prompt = nullptr;
+
+void render::prompt(const char* msg) {
+  _prompt = msg;
+}
 
 int16_t render::cam_x() {
   return _cam_x;
@@ -149,6 +154,9 @@ void render::clear() {
     }
   }
   _shop_labels(true); // erase last frame's price tags at the old camera
+  // erase the prompt strip at the old camera: it is screen-fixed, so its world
+  // rect moves with the camera and a camera cut would strand it otherwise
+  _erase_world_area(_cam_x, _cam_y + ARENA_H - _prompt_h, (int16_t)display::width(), _prompt_h);
 }
 
 // price tags over the shop machines, anchored to the world so they pan with the
@@ -223,4 +231,14 @@ void render::draw() {
     }
   }
   _shop_labels(false);
+  if (_prompt != nullptr && _prompt[0] != '\0') {
+    uint8_t len = 0;
+    while (_prompt[len] != '\0') {
+      ++len;
+    }
+    const int16_t tw = (int16_t)len * 6; // size-1 glyphs are 6px wide
+    const int16_t sw = (int16_t)display::width();
+    const int16_t sx = (sw - tw) / 2; // centred; the strip is always fully on screen
+    display::text(_prompt, sx < 0 ? 0 : sx, ARENA_BOTTOM - _prompt_h + 1, colour::yellow, 1);
+  }
 }

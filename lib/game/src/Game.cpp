@@ -10,7 +10,7 @@
 #include <Panel.h>
 #include <Render.h>
 #include <Screens.h>
-#include <Scores.h>
+#include <Points.h>
 #include <Sim.h>
 
 #include "Game.h"
@@ -66,7 +66,7 @@ bool game::begin(uint8_t role) {
 
   tilemap::init();
 
-  scores::load();
+  points::load();
 
   _scr = screens::id::menu;
   _sel = 0;
@@ -85,7 +85,7 @@ void game::update() {
   switch (_scr) {
     case screens::id::menu: _update_menu(); break;
     case screens::id::mode: _update_mode(); break;
-    case screens::id::scores: _update_scores(); break;
+    case screens::id::points: _update_points(); break;
     case screens::id::playing: _update_playing(); break;
     case screens::id::pause: _update_pause(); break;
     case screens::id::game_over: _update_game_over(); break;
@@ -137,7 +137,7 @@ void game::_enter_menu() {
 
 void game::_enter_game_over() {
   const sim::state& v = sim::view();
-  scores::add_run(v.kills, v.peak); // best tracks the max wallet, spending never lowers it
+  points::add_run(v.kills, v.points); // best is the wallet at death: earned minus spent
   _scr = screens::id::game_over;
   _sel = 0;
 }
@@ -206,14 +206,30 @@ void game::_shop_update(uint32_t now) {
         }
         break;
       case 2:
-        ok = sim::buy_damage(now);
-        snprintf(_hint_buf, sizeof(_hint_buf), ok ? "DMG x2 60s!" : "NEED %lu",
-                 (unsigned long)sim::PRICE_DMG);
+        if (v.dmg_lvl >= sim::MAX_LVL) {
+          snprintf(_hint_buf, sizeof(_hint_buf), "DMG MAX");
+        } else {
+          ok = sim::buy_damage(now);
+          if (ok) {
+            snprintf(_hint_buf, sizeof(_hint_buf), "DMG LV%u!", sim::view().dmg_lvl);
+          } else {
+            snprintf(_hint_buf, sizeof(_hint_buf), "NEED %lu",
+                     (unsigned long)sim::price_for(sim::PRICE_DMG, v.dmg_lvl));
+          }
+        }
         break;
       case 3:
-        ok = sim::buy_speed(now);
-        snprintf(_hint_buf, sizeof(_hint_buf), ok ? "SPEED UP 30s!" : "NEED %lu",
-                 (unsigned long)sim::PRICE_SPD);
+        if (v.spd_lvl >= sim::MAX_LVL) {
+          snprintf(_hint_buf, sizeof(_hint_buf), "SPD MAX");
+        } else {
+          ok = sim::buy_speed(now);
+          if (ok) {
+            snprintf(_hint_buf, sizeof(_hint_buf), "SPD LV%u!", sim::view().spd_lvl);
+          } else {
+            snprintf(_hint_buf, sizeof(_hint_buf), "NEED %lu",
+                     (unsigned long)sim::price_for(sim::PRICE_SPD, v.spd_lvl));
+          }
+        }
         break;
       default:
         ok = sim::roll_roulette(now);
@@ -228,15 +244,31 @@ void game::_shop_update(uint32_t now) {
   }
 
   if (now < _hint_until && _hint_buf[0] != '\0') {
-    panel::hint(_hint_buf); // recent result wins over the prompt
+    render::prompt(_hint_buf); // recent result wins over the prompt
     return;
   }
   switch (shop) {
-    case 1: panel::hint("E: HEAL +2HP 100"); break;
-    case 2: panel::hint("E: DMG x2 150"); break;
-    case 3: panel::hint("E: SPD UP 120"); break;
-    case 4: panel::hint("E: ROLL 100"); break;
-    default: panel::hint(nullptr); break;
+    case 1: render::prompt("E: HEAL +2HP 100"); break;
+    case 2:
+      if (v.dmg_lvl >= sim::MAX_LVL) {
+        render::prompt("DMG MAX");
+      } else {
+        snprintf(_hint_buf, sizeof(_hint_buf), "E: DMG LV%u %lu", (unsigned)v.dmg_lvl + 1u,
+                 (unsigned long)sim::price_for(sim::PRICE_DMG, v.dmg_lvl));
+        render::prompt(_hint_buf);
+      }
+      break;
+    case 3:
+      if (v.spd_lvl >= sim::MAX_LVL) {
+        render::prompt("SPD MAX");
+      } else {
+        snprintf(_hint_buf, sizeof(_hint_buf), "E: SPD LV%u %lu", (unsigned)v.spd_lvl + 1u,
+                 (unsigned long)sim::price_for(sim::PRICE_SPD, v.spd_lvl));
+        render::prompt(_hint_buf);
+      }
+      break;
+    case 4: render::prompt("E: ROLL 100"); break;
+    default: render::prompt(nullptr); break;
   }
 }
 
@@ -270,7 +302,7 @@ void game::_update_menu() {
         _sel = 0;
         break;
       case 1:
-        _scr = screens::id::scores;
+        _scr = screens::id::points;
         _sel = 0;
         break;
       default: // Exit
@@ -293,7 +325,7 @@ void game::_update_mode() {
   screens::paint(_scr, _sel);
 }
 
-void game::_update_scores() {
+void game::_update_points() {
   if (input::fire_pressed() || input::pause_pressed()) {
     _enter_menu();
   }
