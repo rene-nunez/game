@@ -20,6 +20,17 @@ handler game::_handler;
 uint32_t game::_tick = 0;
 uint32_t game::_peer_tick = 0;
 
+int16_t game::_shop_hx = -1;
+int16_t game::_shop_hy = -1;
+int16_t game::_shop_dx = -1;
+int16_t game::_shop_dy = -1;
+int16_t game::_shop_sx = -1;
+int16_t game::_shop_sy = -1;
+int16_t game::_shop_rx = -1;
+int16_t game::_shop_ry = -1;
+char game::_hint_buf[28] = {0};
+uint32_t game::_hint_until = 0;
+
 uint32_t game::_last_frame_ms = 0;
 
 screens::id game::_scr = screens::id::menu;
@@ -108,6 +119,9 @@ int8_t game::_nav_edge() {
 
 void game::_start_game() {
   sim::reset();
+  _scan_shops();
+  _hint_until = 0;
+  _hint_buf[0] = '\0';
   panel::init(); // static panel + minimap terrain, then blips on top
   render::update_camera();
   render::repaint(); // forced: the game over screen cleared the arena and the camera may not move
@@ -123,9 +137,107 @@ void game::_enter_menu() {
 
 void game::_enter_game_over() {
   const sim::state& v = sim::view();
-  scores::add_run(v.kills, v.score);
+  scores::add_run(v.kills, v.peak); // best tracks the max wallet, spending never lowers it
   _scr = screens::id::game_over;
   _sel = 0;
+}
+
+void game::_scan_shops() {
+  _shop_hx = _shop_hy = -1;
+  _shop_dx = _shop_dy = -1;
+  _shop_sx = _shop_sy = -1;
+  _shop_rx = _shop_ry = -1;
+  for (uint8_t r = 0; r < tilemap::ROWS; ++r) {
+    for (uint8_t c = 0; c < tilemap::COLS; ++c) {
+      const uint8_t t = tilemap::tiles[r][c];
+      int16_t* ox = nullptr;
+      int16_t* oy = nullptr;
+      switch (t) {
+        case tilemap::VENDING: ox = &_shop_hx; oy = &_shop_hy; break;
+        case tilemap::V_DMG: ox = &_shop_dx; oy = &_shop_dy; break;
+        case tilemap::V_SPD: ox = &_shop_sx; oy = &_shop_sy; break;
+        case tilemap::ROULETTE: ox = &_shop_rx; oy = &_shop_ry; break;
+        default: break;
+      }
+      // first (top-left) tile of the 2x2 block wins, so the centre is one tile in
+      if (ox != nullptr && *ox < 0) {
+        *ox = (int16_t)(((uint16_t)c + 1u) * tilemap::TILE);
+        *oy = (int16_t)(((uint16_t)r + 1u) * tilemap::TILE);
+      }
+    }
+  }
+}
+
+void game::_shop_update(uint32_t now) {
+  const sim::state& v = sim::view();
+  const float pcx = v.player.x + sim::PLAYER_SIZE / 2.0f;
+  const float pcy = v.player.y + sim::PLAYER_SIZE / 2.0f;
+  const float r2 = (float)(_shop_r * _shop_r);
+  auto near = [&](int16_t sx, int16_t sy) -> bool {
+    if (sx < 0) {
+      return false;
+    }
+    const float dx = pcx - (float)sx;
+    const float dy = pcy - (float)sy;
+    return dx * dx + dy * dy <= r2;
+  };
+  uint8_t shop = 0; // 1 heal, 2 damage, 3 speed, 4 roulette
+  if (near(_shop_hx, _shop_hy)) {
+    shop = 1;
+  } else if (near(_shop_dx, _shop_dy)) {
+    shop = 2;
+  } else if (near(_shop_sx, _shop_sy)) {
+    shop = 3;
+  } else if (near(_shop_rx, _shop_ry)) {
+    shop = 4;
+  }
+
+  if (input::interact_pressed() && shop != 0) {
+    bool ok = false;
+    switch (shop) {
+      case 1:
+        ok = sim::buy_heal(now);
+        if (ok) {
+          snprintf(_hint_buf, sizeof(_hint_buf), "HEALED +2HP");
+        } else {
+          snprintf(_hint_buf, sizeof(_hint_buf),
+                   v.player_hp >= sim::PLAYER_HP_MAX ? "HP FULL" : "NEED %lu",
+                   (unsigned long)sim::PRICE_HEAL);
+        }
+        break;
+      case 2:
+        ok = sim::buy_damage(now);
+        snprintf(_hint_buf, sizeof(_hint_buf), ok ? "DMG x2 60s!" : "NEED %lu",
+                 (unsigned long)sim::PRICE_DMG);
+        break;
+      case 3:
+        ok = sim::buy_speed(now);
+        snprintf(_hint_buf, sizeof(_hint_buf), ok ? "SPEED UP 30s!" : "NEED %lu",
+                 (unsigned long)sim::PRICE_SPD);
+        break;
+      default:
+        ok = sim::roll_roulette(now);
+        if (ok) {
+          snprintf(_hint_buf, sizeof(_hint_buf), "GUN: %s", sim::gun_name());
+        } else {
+          snprintf(_hint_buf, sizeof(_hint_buf), "NEED %lu", (unsigned long)sim::PRICE_ROLL);
+        }
+        break;
+    }
+    _hint_until = now + 1500;
+  }
+
+  if (now < _hint_until && _hint_buf[0] != '\0') {
+    panel::hint(_hint_buf); // recent result wins over the prompt
+    return;
+  }
+  switch (shop) {
+    case 1: panel::hint("E: HEAL +2HP 100"); break;
+    case 2: panel::hint("E: DMG x2 150"); break;
+    case 3: panel::hint("E: SPD UP 120"); break;
+    case 4: panel::hint("E: ROLL 100"); break;
+    default: panel::hint(nullptr); break;
+  }
 }
 
 void game::_sleep() {
@@ -202,10 +314,12 @@ void game::_update_playing() {
 
   // the order matters: the clear-before-sim is what erases entities that die mid-frame
   render::clear();
-  if (!sim::step(millis())) {
+  const uint32_t now = millis();
+  if (!sim::step(now)) {
     _enter_game_over(); // sim reports the death, the screen change belongs here
     return;
   }
+  _shop_update(now); // INTERACT buys + prompt, before the panel paints it
   render::update_camera();
   render::draw();
   panel::draw();

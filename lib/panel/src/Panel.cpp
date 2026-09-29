@@ -12,6 +12,11 @@ int16_t panel::_mm_py[1 + sim::MAX_ZOMBIES] = {0};
 uint8_t panel::_mm_n = 0;
 int16_t panel::_mm_ctx = -1; // camera cell tile whose frame is on the minimap, -1 = none yet
 int16_t panel::_mm_cty = -1;
+const char* panel::_hint = nullptr;
+
+void panel::hint(const char* msg) {
+  _hint = msg;
+}
 
 int16_t panel::_mm_x() {
   return (int16_t)display::width() - _mm_w - _mm_gap;
@@ -21,6 +26,7 @@ void panel::init() {
   const int16_t mx = _mm_x();
   _mm_ctx = -1; // the base repaint wipes the frame and the blips
   _mm_n = 0;
+  _hint = nullptr;
   display::fill_rect(0, render::ARENA_BOTTOM, (int16_t)display::width(), _panel_h, colour::black);
 
   for (uint8_t r = 0; r < tilemap::ROWS; ++r) { // minimap terrain, same-colour runs
@@ -68,6 +74,32 @@ void panel::draw() {
   const uint16_t spent = display::rgb565(40, 40, 40);
   for (uint8_t i = 0; i < sim::PLAYER_HP_MAX; ++i) {
     display::fill_rect(22 + (int16_t)i * 10, render::ARENA_BOTTOM + 40, 8, 8, (i < v.player_hp) ? live : spent);
+  }
+
+  // gun + live buffs + shop prompt. The row is cleared first: gun names and
+  // countdowns shrink ("SHOTGUN" -> "SMG", "D9" -> "D10" no, "S3" -> gone).
+  const int16_t mx = _mm_x();
+  const int16_t gy = render::ARENA_BOTTOM + 52;
+  display::fill_rect(0, gy, mx, 8, colour::black);
+  char gun_buf[28];
+  int n = snprintf(gun_buf, sizeof(gun_buf), "GUN %s", sim::gun_name());
+  const uint32_t now = millis();
+  if (n > 0 && (size_t)n < sizeof(gun_buf)) {
+    if (now < v.dmg_until) {
+      n += snprintf(gun_buf + n, sizeof(gun_buf) - (size_t)n, " D%us",
+                    (unsigned)((v.dmg_until - now + 999u) / 1000u));
+    }
+    if (n > 0 && (size_t)n < sizeof(gun_buf) && now < v.speed_until) {
+      n += snprintf(gun_buf + n, sizeof(gun_buf) - (size_t)n, " S%us",
+                    (unsigned)((v.speed_until - now + 999u) / 1000u));
+    }
+  }
+  display::text(gun_buf, 4, gy, colour::white, 1);
+
+  const int16_t hy = render::ARENA_BOTTOM + 61; // 61 + 8 = 69, still inside the 70px panel
+  display::fill_rect(0, hy, mx, 8, colour::black);
+  if (_hint != nullptr && _hint[0] != '\0') {
+    display::text(_hint, 4, hy, colour::yellow, 1);
   }
 }
 

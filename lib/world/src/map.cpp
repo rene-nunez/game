@@ -23,8 +23,15 @@ namespace tilemap {
           case '#':
             t = WALL;
             break;
+          case 'H':
           case 'V':
             t = VENDING;
+            break;
+          case 'D':
+            t = V_DMG;
+            break;
+          case 'S':
+            t = V_SPD;
             break;
           case 'R':
             t = ROULETTE;
@@ -84,7 +91,11 @@ namespace tilemap {
       case WALL:
         return display::rgb565(148, 138, 120); // muted cream-grey stone
       case VENDING:
-        return display::rgb565(40, 150, 200); // vending teal (untouched)
+        return display::rgb565(70, 200, 90); // heal green
+      case V_DMG:
+        return display::rgb565(220, 60, 50); // damage red
+      case V_SPD:
+        return display::rgb565(60, 130, 230); // speed blue
       case ROULETTE:
         return display::rgb565(175, 145, 75); // aged brass
       default:
@@ -121,11 +132,15 @@ namespace tilemap {
     const int16_t py = wy & 15;
 
     switch (t) {
-      case VENDING: {
+      case VENDING:
+      case V_DMG:
+      case V_SPD: {
         // 2x2 vending machine (32x32): local coords from the same-type
         // neighbours above/left, so every quadrant draws its own quarter.
-        const int16_t gx = (tile_at(wx - TILE, wy) == VENDING ? 16 : 0) + px;
-        const int16_t gy = (tile_at(wx, wy - TILE) == VENDING ? 16 : 0) + py;
+        // H green = heal, D red = damage, S blue = speed; the side panel and
+        // the colour band below the header carry the base colour.
+        const int16_t gx = (tile_at(wx - TILE, wy) == t ? 16 : 0) + px;
+        const int16_t gy = (tile_at(wx, wy - TILE) == t ? 16 : 0) + py;
         const bool edge_x = (gx == 0 || gx == 31);
         const bool edge_y = (gy == 0 || gy == 31);
         if (edge_x || edge_y) {
@@ -136,6 +151,9 @@ namespace tilemap {
             return display::rgb565(10, 25, 35); // logo dots
           }
           return display::rgb565(210, 240, 250); // header light
+        }
+        if (gy >= 7 && gy <= 9) {
+          return base; // colour band: green heal, red damage, blue speed
         }
         if (gy >= 28) {
           return display::rgb565(20, 50, 65); // kick plate

@@ -25,10 +25,10 @@
 - `lib/network` — raw ESP-NOW, no message logic; `lib/protocol` — `msg_type` + packed structs; `lib/handler` — typed routing/dispatch
 - `lib/display` — `display` + `colour`; the only place TFT_eSPI is used
 - `lib/input` — joystick (ADC1) + buttons (debounce + edge)
-- `lib/world` — `tilemap`: 60x30 all-grass maze, `_art` rows, wall queries, spawn, BFS `field`; tiles: grass (only walkable), hedge walls, 2x2 vending + 2x2 roulette (visual-only 32px sprites in `color_at`)
+- `lib/world` — `tilemap`: 60x30 all-grass maze, `_art` rows, wall queries, spawn, BFS `field`; tiles: grass (only walkable), hedge walls, three 2x2 vendings (H heal green, D damage red, S speed blue) + 2x2 roulette (visual 32px sprites in `color_at`, price tags in `render`)
 - `lib/sim` — player, zombies, bullets, waves, score-as-wallet, weapons, buffs; owns state, never touches screen/menus/network/sound (emits `last_event`)
-- `lib/render` — camera, terrain repaint, arena sprites; reads `sim::view()` only
-- `lib/panel` — bottom strip: `SCORE/WAVE/KILLS/GUN` + HP pips + 2px/tile minimap; reads `render` + `sim::view()`
+- `lib/render` — camera, terrain repaint, arena sprites + shop price tags; reads `sim::view()` + `tilemap` (tags are tile-anchored)
+- `lib/panel` — bottom strip: `SCORE/WAVE/KILLS/GUN` + HP pips + buff timers + shop hint + 2px/tile minimap; reads `render` + `sim::view()`
 - `lib/buzz` — passive-buzzer jingles, non-blocking (`update(now)`); `game` fires it from `sim::last_event`
 - `lib/scores` — RTC-backed `{best, total_kills}` today; the microSD seam (same 4 functions)
 - `lib/screens` — `id` enum + item tables + menu chrome
@@ -50,7 +50,7 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 
 ## World / sim contracts
 
-- `_art` rows exactly `COLS` chars; map: all grass + 2-tile ring lanes, maze everywhere, center holds vending + roulette; 1311 walkable (73%), 0 orphans, machines 8/8 reachable, BFS max 76, 0 local minima (all in `run.sh`)
+- `_art` rows exactly `COLS` chars; map: all grass + 2-tile ring lanes, maze everywhere, center holds 3 vendings + roulette; 1303 walkable (72%), 0 orphans, machines 16/16 reachable (4 per shop), BFS max 76, 0 local minima (all in `run.sh`)
 - machine sprites must read at 32px (ASCII dump of `color_at`, never by eye)
 - `tilemap::solid_rect` gates movement per axis (X then Y); bullets die on non-walkable
 - zombie spawns: random-offset scan, first walkable tile >= 100px away
@@ -60,14 +60,14 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 
 ## Shop (F1) — agreed prices/stats
 
-- vending (proximity + `INTERACT`): **heal 100** (+2 HP), **damage x2 60s 150**, **speed x1.4 30s 120**; denied hint when broke
+- vending (proximity + `INTERACT`, one machine per buff): **H heal green 100** (+2 HP), **D damage red x2 60s 150**, **S speed blue x1.4 30s 120**; denied hint when broke; price tags float over the machines
 - roulette 100 → random weapon; weapons are **roulette-only, never bought**; start pistol (dmg1/cd500); SMG (dmg1/cd180); shotgun (3 pellets/cd900); rifle (dmg3/cd800)
 - panel shows `GUN xxx` (text, no sprites); buffs expire by `speed_until`/damage timer
 - zombies: normal (40/hp2/+10), **runner** (70/hp1/+15, orange), **boss** every wave%5==0 (30/hp25/+200, purple, 1 of 8 slots); `render` colours by `actor.kind`
 
 ## Roadmap
 
-- **F1 shop+roulette**: `sim::state` += `weapon/dmg_mult/speed_until/peak/last_event` (+`actor.kind`); `game` proximity+buy; `panel` hint+`GUN`; verify exact-score buys, expiry, peak-after-spend on glass
+- **F1 shop+roulette** ✅ done: `sim::state` += `weapon/dmg_mult/speed_until/peak/last_event` (+`actor.kind`); `game` proximity+buy; `panel` hint+`GUN`; verify exact-score buys, expiry, peak-after-spend on glass
 - **F2 Z32+intro+screens**: `ZOMBIES`→`Z32` strings + README (repo path unchanged); `screens::id` += `logo` (centered, timed/skippable) → `team` (names TBD by user) → `menu`
 - **F3 buzzer**: `lib/buzz` on GPIO 26, jingles menu/shoot/buy/roulette/hurt/wave/game-over, fired from `last_event`
 - **F4 runners+boss**: kinds, waves, colours, cap-8 slots; balance on glass

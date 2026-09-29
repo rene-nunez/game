@@ -24,6 +24,12 @@ void sim::reset() {
   _s.kills = 0;
   _s.wave = 0;
   _s.score = 0;
+  _s.peak = 0;
+  _s.gun = weapon::pistol;
+  _s.dmg_mult = 1;
+  _s.dmg_until = 0;
+  _s.speed_until = 0;
+  _s.last_event = event::none;
   _last_shot = 0;
   _last_damage = 0;
   _s.player_hp = PLAYER_HP_MAX;
@@ -155,14 +161,51 @@ void sim::_spawn_wave() {
       if (dx * dx + dy * dy < (float)spawn_min_d2 && k + 1 < total) {
         continue; // too close to the player, keep looking
       }
-      _s.zombies[i] = { x, y, zombie_hp, true };
+      _s.zombies[i] = { x, y, zombie_hp, true, actor_kind::normal };
       break;
     }
   }
+  _s.last_event = event::wave;
+}
+
+uint32_t sim::_fire_cd(weapon w) {
+  switch (w) {
+    case weapon::smg: return 180;
+    case weapon::shotgun: return 900;
+    case weapon::rifle: return 800;
+    default: return 500; // pistol
+  }
+}
+
+uint8_t sim::_base_dmg(weapon w) {
+  switch (w) {
+    case weapon::rifle: return 3;
+    default: return 1; // pistol, smg and each shotgun pellet
+  }
+}
+
+uint8_t sim::_fire_one(uint32_t now, float dx, float dy, uint8_t dmg) {
+  const float bx = _s.player.x + PLAYER_SIZE / 2.0f;
+  const float by = _s.player.y + PLAYER_SIZE / 2.0f;
+  for (uint8_t i = 0; i < MAX_BULLETS; ++i) {
+    if (!_s.bullets[i].active) {
+      _s.bullets[i] = {
+          bx,
+          by,
+          dx * bullet_speed,
+          dy * bullet_speed,
+          dmg,
+          true,
+      };
+      _last_shot = now;
+      return 1;
+    }
+  }
+  return 0; // rack is full: keep the cooldown so the next press retries
 }
 
 void sim::_do_fire(uint32_t now) {
-  if (now - _last_shot < fire_cd_ms) {
+  if (now - _last_shot < _fire_cd(_s.gun)) {
     return;
   }
 
@@ -192,18 +235,20 @@ void sim::_do_fire(uint32_t now) {
   dx /= len;
   dy /= len;
 
-  for (uint8_t i = 0; i < MAX_BULLETS; ++i) {
-    if (!_s.bullets[i].active) {
-      _s.bullets[i] = {
-          bx,
-          by,
-          dx * bullet_speed,
-          dy * bullet_speed,
-          true,
-      };
-      _last_shot = now;
-      break;
-    }
+  const uint8_t dmg = (uint8_t)(_base_dmg(_s.gun) * _s.dmg_mult);
+  uint8_t fired = 0;
+  if (_s.gun == weapon::shotgun) {
+    // 3 pellets fanned around the aim: straight, -0.15rad, +0.15rad
+    constexpr float c = 0.988771f; // cos(0.15)
+    constexpr float s = 0.149438f; // sin(0.15)
+    fired += _fire_one(now, dx, dy, dmg);
+    fired += _fire_one(now, dx * c - dy * s, dx * s + dy * c, dmg);
+    fired += _fire_one(now, dx * c + dy * s, -dx * s + dy * c, dmg);
+  } else {
+    fired = _fire_one(now, dx, dy, dmg);
+  }
+  if (fired > 0) {
+    _s.last_event = event::shoot;
   }
 }
 
@@ -213,6 +258,11 @@ bool sim::step(uint32_t now) {
     dt = 0.05f;
   }
   _last_ms = now;
+  _s.last_event = event::none; // buys after step() overwrite this for their frame
+
+  if (now >= _s.dmg_until) {
+    _s.dmg_mult = 1; // damage buff expired (or never bought: dmg_until == 0)
+  }
 
   float dx = input::jx();
   float dy = input::jy();
@@ -223,7 +273,8 @@ bool sim::step(uint32_t now) {
     dy /= len;
   }
 
-  _move_entity(_s.player.x, _s.player.y, dx * player_speed * dt, dy * player_speed * dt, PLAYER_SIZE);
+  const float spd = (now < _s.speed_until) ? player_speed * speed_mult : player_speed;
+  _move_entity(_s.player.x, _s.player.y, dx * spd * dt, dy * spd * dt, PLAYER_SIZE);
 
   if (input::fire_pressed()) {
     _do_fire(now);
@@ -254,10 +305,17 @@ bool sim::step(uint32_t now) {
       const float hdy = _s.bullets[i].y - zcy;
       if (hdx * hdx + hdy * hdy <= hit_dist * hit_dist) {
         _s.bullets[i].active = false;
-        if (--_s.zombies[z].hp == 0) {
+        const uint8_t dmg = _s.bullets[i].dmg;
+        if (dmg >= _s.zombies[z].hp) {
+          _s.zombies[z].hp = 0;
           _s.zombies[z].active = false;
           ++_s.kills;
           _s.score += score_per_kill;
+          if (_s.score > _s.peak) {
+            _s.peak = _s.score; // spending never lowers the peak
+          }
+        } else {
+          _s.zombies[z].hp = (uint8_t)(_s.zombies[z].hp - dmg);
         }
         break;
       }
@@ -289,11 +347,13 @@ bool sim::step(uint32_t now) {
       _last_damage = now;
       if (_s.player_hp > 0) {
         --_s.player_hp;
+        _s.last_event = event::hurt;
       }
     }
   }
 
   if (_s.player_hp == 0) {
+    _s.last_event = event::over;
     return false; // the caller raises the game over screen, sim never touches it
   }
 
@@ -305,4 +365,69 @@ bool sim::step(uint32_t now) {
     _spawn_wave();
   }
   return true;
+}
+
+bool sim::buy_heal(uint32_t now) {
+  (void)now;
+  if (_s.player_hp >= PLAYER_HP_MAX || _s.score < PRICE_HEAL) {
+    _s.last_event = event::denied; // full HP or broke
+    return false;
+  }
+  _s.score -= PRICE_HEAL; // exact score pays
+  _s.player_hp = (uint8_t)(_s.player_hp + 2 > PLAYER_HP_MAX ? PLAYER_HP_MAX : _s.player_hp + 2);
+  _s.last_event = event::buy_heal;
+  return true;
+}
+
+bool sim::buy_damage(uint32_t now) {
+  if (_s.score < PRICE_DMG) {
+    _s.last_event = event::denied;
+    return false;
+  }
+  _s.score -= PRICE_DMG;
+  _s.dmg_mult = 2;
+  _s.dmg_until = now + DMG_MS;
+  _s.last_event = event::buy_dmg;
+  return true;
+}
+
+bool sim::buy_speed(uint32_t now) {
+  if (_s.score < PRICE_SPD) {
+    _s.last_event = event::denied;
+    return false;
+  }
+  _s.score -= PRICE_SPD;
+  _s.speed_until = now + SPD_MS;
+  _s.last_event = event::buy_spd;
+  return true;
+}
+
+bool sim::roll_roulette(uint32_t now) {
+  (void)now;
+  if (_s.score < PRICE_ROLL) {
+    _s.last_event = event::denied;
+    return false;
+  }
+  _s.score -= PRICE_ROLL;
+  // roulette-only pool: the pistol is the starter and never comes back
+  switch (esp_random() % 3) {
+    case 0: _s.gun = weapon::smg; break;
+    case 1: _s.gun = weapon::shotgun; break;
+    default: _s.gun = weapon::rifle; break;
+  }
+  _s.last_event = event::roulette;
+  return true;
+}
+
+const char* sim::gun_name(weapon w) {
+  switch (w) {
+    case weapon::smg: return "SMG";
+    case weapon::shotgun: return "SHOTGUN";
+    case weapon::rifle: return "RIFLE";
+    default: return "PISTOL";
+  }
+}
+
+const char* sim::gun_name() {
+  return gun_name(_s.gun);
 }

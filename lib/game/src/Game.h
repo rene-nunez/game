@@ -15,6 +15,7 @@ class game {
 
   private:
     static constexpr uint32_t _frame_ms = 33; // ~30 fps
+    static constexpr int16_t _shop_r = 40;    // INTERACT reach, px from a machine centre
 
     static uint32_t _last_frame_ms;
 
@@ -24,6 +25,13 @@ class game {
     static handler _handler;
     static uint32_t _tick;
     static uint32_t _peer_tick;
+
+    static int16_t _shop_hx, _shop_hy; // heal vending centre, world px (-1 = missing)
+    static int16_t _shop_dx, _shop_dy; // damage vending centre
+    static int16_t _shop_sx, _shop_sy; // speed vending centre
+    static int16_t _shop_rx, _shop_ry; // roulette centre
+    static char _hint_buf[28];         // transient result text ("NEED 100", "GUN: SMG")
+    static uint32_t _hint_until;       // result visible while millis() < this
 
     static void _on_heartbeat(const uint8_t* data, size_t len);
 
@@ -35,6 +43,9 @@ class game {
     static void _start_game();
     static void _enter_menu();
     static void _enter_game_over();
+
+    static void _scan_shops();       // cache the 2x2 machine centres, once per run
+    static void _shop_update(uint32_t now); // INTERACT buys + panel prompt, after sim::step
 
     static void _update_menu();
     static void _update_mode();

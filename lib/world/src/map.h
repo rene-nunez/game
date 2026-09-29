@@ -11,16 +11,19 @@ namespace tilemap {
 
   constexpr uint8_t FLOOR = 0;  // grass, walkable (the only walkable tile)
   constexpr uint8_t WALL = 1;   // maze wall, solid
-  constexpr uint8_t VENDING = 2;// vending machine (2x2), solid, visual only
-  constexpr uint8_t ROULETTE = 3;// prize wheel (2x2), solid, visual only
+  constexpr uint8_t VENDING = 2;// heal vending machine (2x2, green), solid, shop via INTERACT
+  constexpr uint8_t ROULETTE = 3;// prize wheel (2x2), solid, roulette via INTERACT
+  constexpr uint8_t V_DMG = 4;  // damage vending machine (2x2, red), solid, shop via INTERACT
+  constexpr uint8_t V_SPD = 5;  // speed vending machine (2x2, blue), solid, shop via INTERACT
   // NB: 'P' in _art is the player spawn; it parses straight to FLOOR.
 
   // Super-minimal green village: 60x30 all-grass with a maze interconnecting
-  // every district, including the center, which holds a 2x2 vending machine
-  // and a 2x2 prize wheel. 2-tile clear lanes on the ring double as the camera
-  // cut lines, so a hard cut always lands on open grass there; interior cuts
-  // may land on maze wall. Buying comes later (visual now).
-  // Legend: # wall  . grass  V vending  R roulette  P spawn
+  // every district, including the center, which holds three 2x2 vending machines
+  // (H heal green, D damage red, S speed blue) and a 2x2 prize wheel. 2-tile
+  // clear lanes on the ring double as the camera cut lines, so a hard cut always
+  // lands on open grass there; interior cuts may land on maze wall.
+  // Legend: # wall  . grass  H heal  D damage  S speed  R roulette  P spawn
+  // (V still parses as heal, for older art.)
   constexpr char _art[ROWS][COLS + 1] = {
 "############################################################",
 "#..........................................................#",
@@ -36,8 +39,8 @@ namespace tilemap {
 "#..........................................................#",
 "#.......###..###........############........##########.....#",
 "#....####......#........#..........#........#..........#...#",
-"#....#......#..#...........VV..RR..#........######.....#...#",
-"#....#..#####..#...........VV..RR...........#..........#...#",
+"#....#......#..#....DD.....HH..RR..#..SS....######.....#...#",
+"#....#..#####..#....DD.....HH..RR.....SS....#..........#...#",
 "#....#..#......#........#..........#........#..#...#####...#",
 "#.......................####...#####...........#.....#.#...#",
 "#...#########..............................#######...#.....#",

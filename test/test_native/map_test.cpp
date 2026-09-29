@@ -251,17 +251,17 @@ int main() {
   {
     int distinct = 0;
     uint16_t seen[16];
-    for (int t = 0; t <= 3; ++t) {
+    for (int t = 0; t <= 5; ++t) {
       bool dup = false;
       for (int i = 0; i < distinct; ++i) dup |= (seen[i] == tilemap::color(t));
       if (!dup) seen[distinct++] = tilemap::color(t);
     }
-    printf("distinct tile colours for tiles 0..3: %d\n", distinct);
-    check(distinct == 4, "each tile kind has its own colour");
+    printf("distinct tile colours for tiles 0..5: %d\n", distinct);
+    check(distinct == 6, "each tile kind has its own colour");
   }
 
   // 8) flood fill from the spawn: no sealed walkable pocket, ring lanes are
-  //    open, the vending machine and the roulette touch reachable ground
+  //    open, every vending machine and the roulette touch reachable ground
   {
     const int stx = tilemap::spawn_px / tilemap::TILE, sty = tilemap::spawn_py / tilemap::TILE;
     std::set<std::pair<int, int> > seen;
@@ -288,18 +288,28 @@ int main() {
     check(walk - (int)seen.size() == 0, "there are sealed walkable pockets");
 
     int shops = 0, shops_ok = 0;
+    int heal = 0, dmg = 0, spd = 0, roll = 0;
     for (int r = 0; r < tilemap::ROWS; ++r) {
       for (int c = 0; c < tilemap::COLS; ++c) {
         const uint8_t t = tilemap::tile_at(c * tilemap::TILE, r * tilemap::TILE);
-        if (t != tilemap::VENDING && t != tilemap::ROULETTE) continue;
+        if (t != tilemap::VENDING && t != tilemap::V_DMG && t != tilemap::V_SPD &&
+            t != tilemap::ROULETTE) {
+          continue;
+        }
         ++shops;
+        if (t == tilemap::VENDING) ++heal;
+        else if (t == tilemap::V_DMG) ++dmg;
+        else if (t == tilemap::V_SPD) ++spd;
+        else ++roll;
         const int dr[4] = {1, -1, 0, 0}, dc[4] = {0, 0, 1, -1};
         for (int k = 0; k < 4; ++k)
           if (seen.count(std::make_pair(r + dr[k], c + dc[k]))) { ++shops_ok; break; }
       }
     }
-    printf("vending+roulette %d, adjacent to reachable ground %d\n", shops, shops_ok);
-    check(shops == 8 && shops_ok == 8, "not every machine tile is reachable");
+    printf("shops %d (heal %d dmg %d spd %d roll %d), adjacent to reachable ground %d\n",
+           shops, heal, dmg, spd, roll, shops_ok);
+    check(shops == 16 && shops_ok == 16, "not every machine tile is reachable");
+    check(heal == 4 && dmg == 4 && spd == 4 && roll == 4, "each shop must be a 2x2 block");
 
     int ring_open = 1;
     for (int c = 1; c < tilemap::COLS - 1; ++c) {

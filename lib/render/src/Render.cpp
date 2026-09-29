@@ -96,7 +96,11 @@ void render::_fill_world_run(int16_t wx, int16_t sy, int16_t w, uint16_t col) {
 }
 
 void render::_erase_world_rect(int16_t wx, int16_t wy, uint8_t size) {
-  for (int16_t dy = 0; dy < (int16_t)size; ++dy) {
+  _erase_world_area(wx, wy, size, size);
+}
+
+void render::_erase_world_area(int16_t wx, int16_t wy, int16_t w, int16_t h) {
+  for (int16_t dy = 0; dy < h; ++dy) {
     const int16_t wyy = wy + dy;
     const int16_t sy = wyy - _cam_y + HUD_H;
     if (sy < HUD_H || sy >= ARENA_BOTTOM) {
@@ -105,7 +109,7 @@ void render::_erase_world_rect(int16_t wx, int16_t wy, uint8_t size) {
 
     int16_t run_x = wx;
     uint16_t run_col = tilemap::color_at(wx, wyy);
-    for (int16_t dx = 1; dx < (int16_t)size; ++dx) {
+    for (int16_t dx = 1; dx < w; ++dx) {
       const uint16_t col = tilemap::color_at(wx + dx, wyy);
       if (col != run_col) {
         _fill_world_run(run_x, sy, (int16_t)(wx + dx - run_x), run_col);
@@ -113,7 +117,7 @@ void render::_erase_world_rect(int16_t wx, int16_t wy, uint8_t size) {
         run_col = col;
       }
     }
-    _fill_world_run(run_x, sy, (int16_t)(wx + size - run_x), run_col);
+    _fill_world_run(run_x, sy, (int16_t)(wx + w - run_x), run_col);
   }
 }
 
@@ -144,6 +148,58 @@ void render::clear() {
       _erase_world_rect((int16_t)v.bullets[i].x, (int16_t)v.bullets[i].y, sim::BULLET_SIZE);
     }
   }
+  _shop_labels(true); // erase last frame's price tags at the old camera
+}
+
+// price tags over the shop machines, anchored to the world so they pan with the
+// camera. Drawn every frame after the terrain, erased via the tilemap like sprites.
+void render::_shop_labels(bool erase) {
+  struct _tag {
+    uint8_t tile;
+    const char* text;
+    uint16_t col;
+  };
+  static const _tag tags[] = {
+      {tilemap::VENDING, "HEAL 100", colour::green},
+      {tilemap::V_DMG, "DMG 150", colour::red},
+      {tilemap::V_SPD, "SPD 120", colour::cyan},
+      {tilemap::ROULETTE, "ROLL 100", colour::yellow},
+  };
+  for (uint8_t ti = 0; ti < 4; ++ti) {
+    const uint8_t want = tags[ti].tile;
+    for (uint8_t r = 0; r < tilemap::ROWS; ++r) {
+      for (uint8_t c = 0; c < tilemap::COLS; ++c) {
+        if (tilemap::tiles[r][c] != want) {
+          continue;
+        }
+        // top-left tile of the 2x2 block only, so the tag paints once per machine
+        if (c > 0 && tilemap::tiles[r][c - 1] == want) {
+          continue;
+        }
+        if (r > 0 && tilemap::tiles[r - 1][c] == want) {
+          continue;
+        }
+        uint8_t len = 0;
+        while (tags[ti].text[len] != '\0') {
+          ++len;
+        }
+        const int16_t tw = (int16_t)len * 6; // size-1 glyphs are 6px wide
+        const int16_t wx = (int16_t)c * tilemap::TILE + tilemap::TILE - tw / 2;
+        const int16_t wy = (int16_t)r * tilemap::TILE - 10; // 8px glyph + 2px gap
+        if (erase) {
+          _erase_world_area(wx, wy, tw, 8);
+          continue;
+        }
+        const int16_t sx = wx - _cam_x;
+        const int16_t sy = wy - _cam_y + HUD_H;
+        if (sx < 0 || sy < HUD_H || sx + tw > (int16_t)display::width() ||
+            sy + 8 > ARENA_BOTTOM) {
+          continue; // partially off-arena: skip rather than bleed into hud/panel
+        }
+        display::text(tags[ti].text, sx, sy, tags[ti].col, 1);
+      }
+    }
+  }
 }
 
 // flat actors: one box per entity, nothing to ghost on erase.
@@ -166,4 +222,5 @@ void render::draw() {
                       colour::white);
     }
   }
+  _shop_labels(false);
 }

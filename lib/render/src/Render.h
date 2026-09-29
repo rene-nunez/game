@@ -30,5 +30,7 @@ class render {
     static int16_t _cell_cam(int16_t p, int16_t step, int16_t max_cam);
     static void _fill_world_run(int16_t wx, int16_t sy, int16_t w, uint16_t col);
     static void _erase_world_rect(int16_t wx, int16_t wy, uint8_t size);
+    static void _erase_world_area(int16_t wx, int16_t wy, int16_t w, int16_t h);
     static void _fill_world_box(int16_t wx, int16_t wy, uint8_t size, uint16_t col);
+    static void _shop_labels(bool erase); // world-anchored price tags over the machines
 };
