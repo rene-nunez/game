@@ -242,8 +242,13 @@ void render::draw() {
   _fill_world_box((int16_t)v.player.x, (int16_t)v.player.y, sim::PLAYER_SIZE, colour::blue);
   for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
     if (v.zombies[i].active) {
-      _fill_world_box((int16_t)v.zombies[i].x, (int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE,
-                      colour::red);
+      uint16_t col = colour::red;
+      if (v.zombies[i].kind == sim::actor_kind::runner) {
+        col = colour::orange;
+      } else if (v.zombies[i].kind == sim::actor_kind::boss) {
+        col = colour::purple;
+      }
+      _fill_world_box((int16_t)v.zombies[i].x, (int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE, col);
     }
   }
   for (uint8_t i = 0; i < sim::MAX_BULLETS; ++i) {

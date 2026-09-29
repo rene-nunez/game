@@ -16,7 +16,7 @@ class sim {
     static constexpr uint8_t MAX_LVL = 5;       // damage and speed cap here, pips per level
 
     enum class weapon : uint8_t { pistol, smg, shotgun, rifle };
-    enum class actor_kind : uint8_t { normal }; // F4 adds runner + boss
+    enum class actor_kind : uint8_t { normal, runner, boss };
     enum class event : uint8_t { none, shoot, buy_heal, buy_dmg, buy_spd, roulette, denied, hurt, wave, over };
 
     // shop: points are the spendable wallet. Heal is flat; damage and speed are
@@ -71,7 +71,10 @@ class sim {
     static const char* gun_name(weapon w);
   private:
     static constexpr float player_speed = 110.0f;
-    static constexpr float zombie_speed = 40.0f;
+    static constexpr float zombie_speed = 40.0f; // normal; runner 70, boss 30
+    static constexpr float runner_speed = 70.0f;
+    static constexpr float boss_speed = 30.0f;
+    static constexpr uint32_t runner_reward = 15; // base, +2 per wave on top
     static constexpr uint16_t spawn_min_d2 = 100 * 100; // keep spawns >= 100px away
     static constexpr float bullet_speed = 320.0f;
     static constexpr float fire_range = 160.0f;
@@ -99,8 +102,13 @@ class sim {
     static uint8_t _base_dmg(weapon w);
     static uint8_t _eff_dmg(uint8_t base, uint8_t lvl); // base*(1+0.25*lvl), half-up, min 1
     static float _spd_mult(uint8_t lvl);                // 1+0.08*lvl
-    static uint8_t _zombie_hp(uint8_t wave);            // 2 + wave/2
-    static uint32_t _kill_reward(uint8_t wave);         // 10 + 2*wave
+    static uint8_t _zombie_hp(actor_kind kind, uint8_t wave); // normal 2+w/2, runner 1+w/6, boss 20+w
+    static uint8_t _zombie_dmg(actor_kind kind);        // boss 2, rest 1
+    static float _zombie_speed(actor_kind kind);        // 40 / 70 / 30
+    static uint32_t _kill_reward(actor_kind kind, uint8_t wave); // normal 10+2w, runner 15+2w, boss 150+10w
+    static uint8_t _wave_total(uint8_t wave); // min(wave+3, MAX_ZOMBIES)
+    static uint8_t _wave_runners(uint8_t wave, uint8_t total); // 0 on wave 1, else up to half
+    static bool _wave_boss(uint8_t wave);     // every 5th wave steals slot 0
     // roulette odds over r = rand % 100: SMG 40, pistol 15, shotgun 30, rifle 15.
     // SMG and shotgun hit more often; the pistol can come back as the booby prize.
     static weapon _roll_weapon(uint8_t r);

@@ -70,7 +70,7 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 - **F1 shop+roulette** ✅ done: `sim::state` += `weapon/dmg_lvl/spd_lvl/points/last_event` (+`actor.kind`); `game` proximity+buy; `panel` pips+`GUN`; verify exact-points buys, levels, wallet-best on glass
 - **F2 Z32+intro+screens** ✅ done: `z32` title strings (repo path unchanged); `screens::id` += `logo` → `team` (both centred chrome, 2.5s timed/FIRE-skippable; team lists 5 ASCII names) → `menu`
 - **F3 buzzer** ✅ done: `lib/buzz` on GPIO 26 via LEDC (ch 0), non-blocking sequencer (`update(now)`); jingles menu/shoot/buy/roulette/hurt/wave/game-over (+denied), fired from `last_event`
-- **F4 runners+boss**: kinds, waves, colours, cap-8 slots; balance on glass
+- **F4 runners+boss** ✅ done: kinds (normal 40 / runner 70 / boss 30), waves (runners from w2 up to half, boss steals slot 0 every 5th), colours red/orange/purple, cap-8 slots; balance on glass
 - **F5 microSD**: share TFT SPI + CS22; `Points.cpp` → JSON `{best,total_kills}` (best = wallet at death); same 4 functions; needs hardware
 - **F6 P3 net**: packed `game_state` ~120B (u16 positions + bit flags, no floats) + `player_input` 4B; host authoritative, client inputs; Solo/Multi handshake; 2-board test with logs. Runs last, once `sim::state` is final
 

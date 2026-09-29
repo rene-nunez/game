@@ -10,6 +10,8 @@ namespace colour {
   constexpr uint16_t blue = 0x001F;
   constexpr uint16_t yellow = 0xFFE0;
   constexpr uint16_t cyan = 0x07FF;
+  constexpr uint16_t orange = 0xFD20; // runner
+  constexpr uint16_t purple = 0x781F; // boss
 }
 
 class display {
