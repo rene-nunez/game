@@ -63,14 +63,14 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 - vending (proximity + `INTERACT`, one machine per buff): **H heal green 100** (+2 HP), **D damage red +25%/lvl max5 base 150**, **S speed blue +8%/lvl max5 base 120**; level price = base + 200·lvl; denied/MAX hints; live price tags (`DMG 650`) float over the machines
 - roulette 100 → weighted weapon (SMG 40 / pistol 15 / shotgun 30 / rifle 15); weapons come only from roulette, never bought directly; start pistol (dmg1/cd500); SMG (dmg1/cd180); shotgun (3 pellets/cd900); rifle (dmg4/cd800)
 - panel shows `POINTS/W+K/GUN` + HP/DMG/SPD pips (text, no sprites); prompt is the arena-centred strip owned by `render`
-- zombies: normal (40/hp 2+wave/2, +10+2·wave pts), **runner** (70/hp1/+15, orange), **boss** every wave%5==0 (30/hp25/+200, purple, 1 of 8 slots); `render` colours by `actor.kind`
+- zombies: total `min(wave+3,8)`; normal (spd40/hp 2+wave/2/dmg1, +10+2·wave pts, red), **runner** (spd70/hp 1+wave/6 —2 hits desde w6—/dmg1, +15+2·wave pts, orange; 0 en w1, luego `min(wave/2,total/2)`), **boss** (spd30/hp 20+wave —25 en w5, 30 en w10—/dmg2, +150+10·wave pts —200 en w5—, purple, roba slot 0 cada `wave%5==0`); `render`+`panel` colorean por `actor.kind`
 
 ## Roadmap
 
 - **F1 shop+roulette** ✅ done: `sim::state` += `weapon/dmg_lvl/spd_lvl/points/last_event` (+`actor.kind`); `game` proximity+buy; `panel` pips+`GUN`; verify exact-points buys, levels, wallet-best on glass
 - **F2 Z32+intro+screens** ✅ done: `z32` title strings (repo path unchanged); `screens::id` += `logo` → `team` (both centred chrome, 2.5s timed/FIRE-skippable; team lists 5 ASCII names) → `menu`
 - **F3 buzzer** ✅ done: `lib/buzz` on GPIO 26 via LEDC (ch 0), non-blocking sequencer (`update(now)`); jingles menu/shoot/buy/roulette/hurt/wave/game-over (+denied), fired from `last_event`
-- **F4 runners+boss** ✅ done: kinds (normal 40 / runner 70 / boss 30), waves (runners from w2 up to half, boss steals slot 0 every 5th), colours red/orange/purple, cap-8 slots; balance on glass
+- **F4 runners+boss** ✅ done: kinds (normal spd40/hp 2+wave/2/dmg1/pts 10+2·wave / runner spd70/hp 1+wave/6/dmg1/pts 15+2·wave / boss spd30/hp 20+wave/dmg2/pts 150+10·wave), waves (total `min(wave+3,8)`; runners 0 en w1, luego `min(wave/2,total/2)`; boss roba slot 0 cada `wave%5==0`), colours red/orange/purple (`render`+`panel` por `actor.kind`), cap-8 slots; balance on glass
 - **F5 microSD**: share TFT SPI + CS22; `Points.cpp` → JSON `{best,total_kills}` (best = wallet at death); same 4 functions; needs hardware
 - **F6 P3 net**: packed `game_state` ~120B (u16 positions + bit flags, no floats) + `player_input` 4B; host authoritative, client inputs; Solo/Multi handshake; 2-board test with logs. Runs last, once `sim::state` is final
 
