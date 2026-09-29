@@ -20,11 +20,11 @@ namespace net {
   constexpr size_t INPUT_LEN = 5;
   constexpr size_t MAX_MSG = 250;
 
-  // button bitmask for player_input
-  constexpr uint8_t BTN_FIRE = 0x01;
-  constexpr uint8_t BTN_RELOAD = 0x02;
-  constexpr uint8_t BTN_INTERACT = 0x04;
-  constexpr uint8_t BTN_PAUSE = 0x08;
+  // button bitmask for player_input (levels; host derives edges)
+  constexpr uint8_t fire_bit = 0x01;
+  constexpr uint8_t reload_bit = 0x02;
+  constexpr uint8_t interact_bit = 0x04;
+  constexpr uint8_t pause_bit = 0x08;
 
   // zombie/bullet flags packing
   constexpr uint8_t ZF_ACTIVE = 0x01;

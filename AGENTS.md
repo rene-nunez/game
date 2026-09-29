@@ -22,13 +22,13 @@
 ## Layout
 
 - `include/` — `pins.h`, `tft_setup.h` (ST7789 + `TFT_INVERSION_OFF` + `TFT_RGB_ORDER TFT_BGR`, panel BGR)
-- `lib/network` — raw ESP-NOW, no message logic; `lib/protocol` — `msg_type` + packed structs; `lib/handler` — typed routing/dispatch
+- `lib/network` — raw ESP-NOW, no message logic; `lib/protocol` — `msg_type` + packed structs (`NetState.h`: `game_state` 121B + `player_input` 5B, Arduino-free so `test_native` checks sizes/round-trips); `lib/handler` — typed routing/dispatch
 - `lib/display` — `display` + `colour`; the only place TFT_eSPI is used
 - `lib/input` — joystick (ADC1) + buttons (debounce + edge)
-- `lib/world` — `tilemap`: 60x30 all-grass maze, `_art` rows, wall queries, spawn, BFS `field`; tiles: grass (only walkable), hedge walls, three 2x2 vendings (H heal green, D damage red, S speed blue) + 2x2 roulette (visual 32px sprites in `color_at`, price tags in `render`)
-- `lib/sim` — player, zombies, bullets, waves, points-as-wallet, weapons, levels; owns state, never touches screen/menus/network/sound (emits `last_event`)
-- `lib/render` — camera, terrain repaint, arena sprites + shop price tags + centred prompt strip; reads `sim::view()` + `tilemap` (tags are tile-anchored)
-- `lib/panel` — bottom strip: `POINTS/W+K/GUN` + HP/DMG/SPD pips + 2px/tile minimap; reads `render` + `sim::view()`
+- `lib/world` — `tilemap`: 60x30 all-grass maze, `_art` rows, wall queries, spawn, BFS `field` (+`field2` for player 2); tiles: grass (only walkable), hedge walls, three 2x2 vendings (H heal green, D damage red, S speed blue) + 2x2 roulette (visual 32px sprites in `color_at`, price tags in `render`)
+- `lib/sim` — players[2] (P1 local, P2 net/inactive Solo), zombies, bullets, waves, shared wallet/gun/levels, points-as-wallet, weapons, levels; owns state, never touches screen/menus/network/sound (emits `last_event`); `snapshot/apply_snapshot` move the net state, P2 ctl comes from `set_p2`
+- `lib/render` — camera (midpoint of living players), terrain repaint, arena sprites (P1 blue, P2 cyan) + shop price tags + centred prompt strip; reads `sim::view()` + `tilemap` (tags are tile-anchored)
+- `lib/panel` — bottom strip: `POINTS/W+K/GUN` + HP(+H2 co-op)/DMG/SPD pips + 2px/tile minimap (P1 white, P2 cyan); reads `render` + `sim::view()`
 - `lib/buzz` — passive-buzzer jingles, non-blocking (`update(now)`); `game` fires it from `sim::last_event`
 - `lib/points` — RTC-backed `{best, total_kills}` + last-4 runs `{pts,kills,wave}` recent-first, mirrored to `/z32.json` on microSD; same callers (`load/add_run(kills,wallet,wave)/best/total_kills/history/history_len`)
 - `lib/screens` — `id` enum + item tables + menu chrome
@@ -54,9 +54,9 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 - machine sprites must read at 32px (ASCII dump of `color_at`, never by eye)
 - `tilemap::solid_rect` gates movement per axis (X then Y); bullets die on non-walkable
 - zombie spawns: random-offset scan, first walkable tile >= 100px away
-- BFS `field` rebuilds only when the player's **tile** changes; `_zombie_steer` descends to the best of 8 neighbours' centres (3 retries, direct chase on `UNREACHABLE`); pass `float&` members (never copies) to `_move_entity`
-- `sim` exposes one read-only `view()` (`reset()`, `step(now)->bool`); death reported by return value, screens raised by caller; points zeroed only in `reset()`
-- economy: points are the spendable wallet; best is the wallet at death (earned minus shop spending); `render`/`panel` never move state; `game` owns shop proximity + `INTERACT` edge + `buzz` firing from `last_event`
+- BFS `field` rebuilds only when the player's **tile** changes (one field per player); `_zombie_steer` descends the nearest alive player's field to the best of 8 neighbours' centres (3 retries, direct chase on `UNREACHABLE`); pass `float&` members (never copies) to `_move_entity`
+- `sim` exposes one read-only `view()` (`reset()`, `step(now)->bool`, `set_p2/set_p2_active` for the peer); death (all active players at 0 HP) reported by return value, screens raised by caller; points zeroed only in `reset()`; dead players respawn at the next wave
+- economy: points are the spendable wallet (shared co-op); best is the wallet at death (earned minus shop spending); `render`/`panel` never move state; `game` owns shop proximity + `INTERACT` edge per player + `buzz` firing from `last_event`
 
 ## Shop (F1) — agreed prices/stats
 
@@ -72,7 +72,7 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 - **F3 buzzer** ✅ done: `lib/buzz` on GPIO 26 via LEDC (ch 0), non-blocking sequencer (`update(now)`); jingles menu/shoot/buy/roulette/hurt/wave/game-over (+denied), fired from `last_event`
 - **F4 runners+boss** ✅ done: kinds (normal spd40/hp 2+wave/2/dmg1/pts 10+2·wave / runner spd70/hp 1+wave/6/dmg1/pts 15+2·wave / boss spd30/hp 20+wave/dmg2/pts 150+10·wave), waves (total `min(wave+3,8)`; runners 0 en w1, luego `min(wave/2,total/2)`; boss roba slot 0 cada `wave%5==0`), colours red/orange/purple (`render`+`panel` por `actor.kind`), cap-8 slots; balance on glass
 - **F5 microSD**: share TFT SPI + CS22; `Points.cpp` → JSON `{best,total_kills}` (best = wallet at death); same 4 functions; needs hardware
-- **F6 P3 net**: packed `game_state` ~120B (u16 positions + bit flags, no floats) + `player_input` 4B; host authoritative, client inputs; Solo/Multi handshake; 2-board test with logs. Runs last, once `sim::state` is final
+- **F6 net co-op** (implemented, needs 2-board test): packed `game_state` 121B (u16 qpos + bit flags, no floats) + `player_input` 5B; host authoritative (sims both, broadcasts ~30Hz), client sends inputs + mirrors snapshots; Solo silent, Multi via `waiting` (peer/10s-timeout/FIRE-solo); P2 shares wallet/gun, heals self, respawns per wave; client quiet 3s → menu. Test: Solo OK; waiting timeout solo; 2 boards join/move/P2-kill/pause/over/restart, 0 `delivery failed`
 
 ## Add a message
 
