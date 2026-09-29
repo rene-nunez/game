@@ -12,7 +12,7 @@ namespace {
   // read these. _item takes an absolute y; nothing may add the row pitch twice.
   // The chrome sits centred: title at 64, first row at 96 on the 240px glass.
   constexpr int16_t _menu_x = 16, _menu_y = 96, _menu_row = 16;
-  constexpr int16_t _over_x = 24, _over_y = 110; // the game over screen is indented
+  constexpr int16_t _over_x = 24, _over_y = 128; // the game over screen is indented
 
   const char* const _menu_items[] = { "Start Game", "Points", "Exit" };
   const char* const _mode_items[] = { "Solo", "Multiplayer", "Back" };
@@ -120,9 +120,9 @@ namespace {
     char buf[32];
     const sim::state& v = sim::view();
     snprintf(buf, sizeof(buf), "Points: %lu   Best: %lu", v.points, points::best());
-    display::text(buf, 24, 60, colour::white, 1);
+    display::text(buf, 24, 96, colour::white, 1);
     snprintf(buf, sizeof(buf), "Wave: %u  Kills: %u", v.wave, v.kills);
-    display::text(buf, 24, 76, colour::white, 1);
+    display::text(buf, 24, 112, colour::white, 1);
 
     _list_rows(_table(screens::id::game_over), sel);
   }

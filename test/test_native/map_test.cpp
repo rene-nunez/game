@@ -68,7 +68,7 @@ int main() {
     struct Screen { int y0, count, above, last; const char* label; };
     const Screen screens[3] = {
         {96, 3, 64 + 2 * GLYPH, 128, "menu/mode/pause"},
-        {110, 2, 76 + GLYPH, 126, "game over"},
+        {128, 2, 112 + GLYPH, 144, "game over"},
         {96, 5, 64 + 2 * GLYPH, 160, "team"},
     };
     for (int s = 0; s < 3; ++s) {
