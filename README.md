@@ -19,7 +19,7 @@ curarte, subir daño y velocidad, o prueba suerte en la ruleta para conseguir me
 - **Oleadas**: cada ronda trae `ronda + 3` zombis (máximo 8 a la vez). Al limpiarlos llega la siguiente.
 - **Zombis**: vida `2 + ronda/2` (r1=2, r6=5, r10=7). Persiguen por el laberinto y quitan 1 HP
   por contacto (con 0.5s de inmunidad entre golpes). Jugador con 5 HP.
-- **Puntos**: cada baja paga `10 + 5·ronda` (r1=15 … r6=40). Gastar baja tu cartera; el *Best*
+- **Puntos**: cada baja paga `10 + 2·ronda` (r1=12 … r6=22). Gastar baja tu cartera; el *Best*
   guarda la cartera que tenías al morir (ganado menos gastado).
 - **Tiendas** (acércate y pulsa INTERACT):
   - **H verde — Heal 100**: +2 HP.

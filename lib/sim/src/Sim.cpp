@@ -177,7 +177,7 @@ uint8_t sim::_eff_dmg(uint8_t base, uint8_t lvl) {
 }
 
 uint32_t sim::_kill_reward(uint8_t wave) {
-  return 10u + 5u * (uint32_t)wave; // later waves pay for the shop curve
+  return 10u + 2u * (uint32_t)wave; // base income with a mild wave slope
 }
 
 float sim::_spd_mult(uint8_t lvl) {

@@ -100,7 +100,7 @@ class sim {
     static uint8_t _eff_dmg(uint8_t base, uint8_t lvl); // base*(1+0.25*lvl), half-up, min 1
     static float _spd_mult(uint8_t lvl);                // 1+0.08*lvl
     static uint8_t _zombie_hp(uint8_t wave);            // 2 + wave/2
-    static uint32_t _kill_reward(uint8_t wave);         // 10 + 5*wave, funds the shop curve
+    static uint32_t _kill_reward(uint8_t wave);         // 10 + 2*wave
     // roulette odds over r = rand % 100: SMG 40, pistol 15, shotgun 30, rifle 15.
     // SMG and shotgun hit more often; the pistol can come back as the booby prize.
     static weapon _roll_weapon(uint8_t r);
