@@ -120,9 +120,9 @@ namespace {
     char buf[32];
     const sim::state& v = sim::view();
     snprintf(buf, sizeof(buf), "Points: %lu   Best: %lu", v.points, points::best());
-    display::text(buf, 24, 96, colour::white, 1);
+    display::text(buf, 36, 96, colour::white, 1);
     snprintf(buf, sizeof(buf), "Wave: %u  Kills: %u", v.wave, v.kills);
-    display::text(buf, 24, 112, colour::white, 1);
+    display::text(buf, 36, 112, colour::white, 1);
 
     _list_rows(_table(screens::id::game_over), sel);
   }
