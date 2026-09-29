@@ -54,10 +54,17 @@ namespace {
     if (_sd_ready) {
       return true;
     }
-    _sd_ready = SD.begin(SD_CS);
+    pinMode(TFT_CS, OUTPUT);
+    digitalWrite(TFT_CS, HIGH); // park the TFT, we own the bus for init
+    SPI.begin(18, 19, 23, -1); // route the VSPI pins (-1 = no bus-wide SS, CS is per device)
+    _sd_ready = SD.begin(SD_CS, SPI, 4000000); // 4MHz: dupont wires + a shared bus
     if (!_sd_ready) {
       Serial.println("[points] no sd, rtc only");
+    } else {
+      Serial.printf("[points] sd ok, type %u size %lluMB\n", SD.cardType(),
+                    SD.cardSize() / (1024u * 1024u));
     }
+    digitalWrite(TFT_CS, HIGH); // leave the bus parked for the TFT
     return _sd_ready;
   }
 
