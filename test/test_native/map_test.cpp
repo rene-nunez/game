@@ -67,9 +67,9 @@ int main() {
     const int ROW = 16, GLYPH = 8, FOOT_GAP = 24;
     struct Screen { int y0, count, above, last; const char* label; };
     const Screen screens[3] = {
-        {56, 3, 24 + 2 * GLYPH, 88, "menu/mode/pause"},
+        {96, 3, 64 + 2 * GLYPH, 128, "menu/mode/pause"},
         {110, 2, 76 + GLYPH, 126, "game over"},
-        {56, 5, 24 + 2 * GLYPH, 120, "team"},
+        {96, 5, 64 + 2 * GLYPH, 160, "team"},
     };
     for (int s = 0; s < 3; ++s) {
       const Screen& sc = screens[s];

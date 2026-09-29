@@ -9,8 +9,9 @@
 
 namespace {
   // menu rows: the full paint and the cursor repaint must agree on where a row is, so both
-  // read these. _item takes an absolute y; nothing may add the row pitch twice
-  constexpr int16_t _menu_x = 16, _menu_y = 56, _menu_row = 16;
+  // read these. _item takes an absolute y; nothing may add the row pitch twice.
+  // The chrome sits centred: title at 64, first row at 96 on the 240px glass.
+  constexpr int16_t _menu_x = 16, _menu_y = 96, _menu_row = 16;
   constexpr int16_t _over_x = 24, _over_y = 110; // the game over screen is indented
 
   const char* const _menu_items[] = { "Start Game", "Points", "Exit" };
@@ -65,7 +66,7 @@ namespace {
 
   void _background(const char* title, uint16_t col) {
     display::fill_rect(0, 0, display::width(), display::height(), colour::black);
-    display::text(title, (display::width() - 6 * (int16_t)strlen(title) * 2) / 2, 24, col, 2);
+    display::text(title, (display::width() - 6 * (int16_t)strlen(title) * 2) / 2, 64, col, 2);
   }
 
   void _list_rows(const _list& t, uint8_t sel) {
@@ -106,11 +107,11 @@ namespace {
 
     char buf[32];
     snprintf(buf, sizeof(buf), "Best points: %lu", points::best());
-    display::text(buf, 16, 60, colour::white, 1);
+    display::text(buf, 16, 100, colour::white, 1);
     snprintf(buf, sizeof(buf), "Total kills: %lu", points::total_kills());
-    display::text(buf, 16, 76, colour::white, 1);
+    display::text(buf, 16, 116, colour::white, 1);
 
-    display::text("FIRE/PAUSE: back", 16, 120, colour::white, 1);
+    display::text("FIRE/PAUSE: back", 16, 160, colour::white, 1);
   }
 
   void _full_game_over(uint8_t sel) {
