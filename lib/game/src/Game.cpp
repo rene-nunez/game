@@ -248,13 +248,12 @@ void game::_shop_update(uint32_t now) {
     return;
   }
   switch (shop) {
-    case 1: render::prompt("E: HEAL +2HP 100"); break;
+    case 1: render::prompt("INT: HEAL +2HP"); break;
     case 2:
       if (v.dmg_lvl >= sim::MAX_LVL) {
         render::prompt("DMG MAX");
       } else {
-        snprintf(_hint_buf, sizeof(_hint_buf), "E: DMG LV%u %lu", (unsigned)v.dmg_lvl + 1u,
-                 (unsigned long)sim::price_for(sim::PRICE_DMG, v.dmg_lvl));
+        snprintf(_hint_buf, sizeof(_hint_buf), "INT: DMG LV%u", (unsigned)v.dmg_lvl + 1u);
         render::prompt(_hint_buf);
       }
       break;
@@ -262,12 +261,11 @@ void game::_shop_update(uint32_t now) {
       if (v.spd_lvl >= sim::MAX_LVL) {
         render::prompt("SPD MAX");
       } else {
-        snprintf(_hint_buf, sizeof(_hint_buf), "E: SPD LV%u %lu", (unsigned)v.spd_lvl + 1u,
-                 (unsigned long)sim::price_for(sim::PRICE_SPD, v.spd_lvl));
+        snprintf(_hint_buf, sizeof(_hint_buf), "INT: SPD LV%u", (unsigned)v.spd_lvl + 1u);
         render::prompt(_hint_buf);
       }
       break;
-    case 4: render::prompt("E: ROLL 100"); break;
+    case 4: render::prompt("INT: ROLL"); break;
     default: render::prompt(nullptr); break;
   }
 }

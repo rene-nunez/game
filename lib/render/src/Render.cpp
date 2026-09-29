@@ -1,3 +1,5 @@
+#include <cstdio>
+
 #include <Display.h>
 #include <map.h>
 #include <Sim.h>
@@ -160,17 +162,34 @@ void render::clear() {
 }
 
 // price tags over the shop machines, anchored to the world so they pan with the
-// camera. Drawn every frame after the terrain, erased via the tilemap like sprites.
+// camera. HEAL/ROLL are fixed; DMG/SPD show the live next-level price (or MAX).
+// Drawn every frame after the terrain, erased via the tilemap like sprites. The
+// erase always covers the widest tag (8 chars): a buy can shrink the text and a
+// tight erase would strand the old pixels for a frame.
 void render::_shop_labels(bool erase) {
   struct _tag {
     uint8_t tile;
     const char* text;
     uint16_t col;
   };
-  static const _tag tags[] = {
+  char dmg_buf[12], spd_buf[12];
+  const sim::state& v = sim::view();
+  if (v.dmg_lvl >= sim::MAX_LVL) {
+    snprintf(dmg_buf, sizeof(dmg_buf), "DMG MAX");
+  } else {
+    snprintf(dmg_buf, sizeof(dmg_buf), "DMG %lu",
+             (unsigned long)sim::price_for(sim::PRICE_DMG, v.dmg_lvl));
+  }
+  if (v.spd_lvl >= sim::MAX_LVL) {
+    snprintf(spd_buf, sizeof(spd_buf), "SPD MAX");
+  } else {
+    snprintf(spd_buf, sizeof(spd_buf), "SPD %lu",
+             (unsigned long)sim::price_for(sim::PRICE_SPD, v.spd_lvl));
+  }
+  const _tag tags[] = {
       {tilemap::VENDING, "HEAL 100", colour::green},
-      {tilemap::V_DMG, "DMG 150", colour::red},
-      {tilemap::V_SPD, "SPD 120", colour::cyan},
+      {tilemap::V_DMG, dmg_buf, colour::red},
+      {tilemap::V_SPD, spd_buf, colour::cyan},
       {tilemap::ROULETTE, "ROLL 100", colour::yellow},
   };
   for (uint8_t ti = 0; ti < 4; ++ti) {
@@ -191,13 +210,16 @@ void render::_shop_labels(bool erase) {
         while (tags[ti].text[len] != '\0') {
           ++len;
         }
-        const int16_t tw = (int16_t)len * 6; // size-1 glyphs are 6px wide
-        const int16_t wx = (int16_t)c * tilemap::TILE + tilemap::TILE - tw / 2;
+        // the block centre never moves, so erase and draw share it; only the
+        // width differs (erase always covers the widest tag, see above)
+        const int16_t cx = (int16_t)c * tilemap::TILE + tilemap::TILE;
         const int16_t wy = (int16_t)r * tilemap::TILE - 10; // 8px glyph + 2px gap
         if (erase) {
-          _erase_world_area(wx, wy, tw, 8);
+          _erase_world_area(cx - _tag_max_w / 2, wy, _tag_max_w, 8);
           continue;
         }
+        const int16_t tw = (int16_t)len * 6; // size-1 glyphs are 6px wide
+        const int16_t wx = cx - tw / 2;
         const int16_t sx = wx - _cam_x;
         const int16_t sy = wy - _cam_y + HUD_H;
         if (sx < 0 || sy < HUD_H || sx + tw > (int16_t)display::width() ||

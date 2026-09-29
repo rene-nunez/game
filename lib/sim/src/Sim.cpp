@@ -171,9 +171,13 @@ uint8_t sim::_zombie_hp(uint8_t wave) {
 }
 
 uint8_t sim::_eff_dmg(uint8_t base, uint8_t lvl) {
-  const float dmg = (float)base * (1.0f + 0.2f * (float)lvl);
-  const uint8_t eff = (uint8_t)(dmg + 0.5f); // half-up: 1-dmg guns step up at lvl 3 and 5
+  const float dmg = (float)base * (1.0f + 0.25f * (float)lvl);
+  const uint8_t eff = (uint8_t)(dmg + 0.5f); // half-up: 1-dmg guns step up at lvl 2 and 4
   return eff < 1 ? 1 : eff;
+}
+
+uint32_t sim::_kill_reward(uint8_t wave) {
+  return 10u + 5u * (uint32_t)wave; // later waves pay for the shop curve
 }
 
 float sim::_spd_mult(uint8_t lvl) {
@@ -191,7 +195,7 @@ uint32_t sim::_fire_cd(weapon w) {
 
 uint8_t sim::_base_dmg(weapon w) {
   switch (w) {
-    case weapon::rifle: return 3;
+    case weapon::rifle: return 4; // anti-boss punch
     default: return 1; // pistol, smg and each shotgun pellet
   }
 }
@@ -318,7 +322,7 @@ bool sim::step(uint32_t now) {
           _s.zombies[z].hp = 0;
           _s.zombies[z].active = false;
           ++_s.kills;
-          _s.points += points_per_kill;
+          _s.points += _kill_reward(_s.wave);
         } else {
           _s.zombies[z].hp = (uint8_t)(_s.zombies[z].hp - dmg);
         }
@@ -429,14 +433,22 @@ bool sim::roll_roulette(uint32_t now) {
     return false;
   }
   _s.points -= PRICE_ROLL;
-  // roulette-only pool: the pistol is the starter and never comes back
-  switch (esp_random() % 3) {
-    case 0: _s.gun = weapon::smg; break;
-    case 1: _s.gun = weapon::shotgun; break;
-    default: _s.gun = weapon::rifle; break;
-  }
+  _s.gun = _roll_weapon((uint8_t)(esp_random() % 100u));
   _s.last_event = event::roulette;
   return true;
+}
+
+sim::weapon sim::_roll_weapon(uint8_t r) {
+  if (r < 40) {
+    return weapon::smg;
+  }
+  if (r < 55) {
+    return weapon::pistol;
+  }
+  if (r < 85) {
+    return weapon::shotgun;
+  }
+  return weapon::rifle;
 }
 
 const char* sim::gun_name(weapon w) {

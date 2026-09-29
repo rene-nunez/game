@@ -60,10 +60,10 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 
 ## Shop (F1) — agreed prices/stats
 
-- vending (proximity + `INTERACT`, one machine per buff): **H heal green 100** (+2 HP), **D damage red +20%/lvl max5 base 150**, **S speed blue +8%/lvl max5 base 120**; level price = base + 250·lvl; denied/MAX hints; price tags float over the machines
-- roulette 100 → random weapon; weapons are **roulette-only, never bought**; start pistol (dmg1/cd500); SMG (dmg1/cd180); shotgun (3 pellets/cd900); rifle (dmg3/cd800)
+- vending (proximity + `INTERACT`, one machine per buff): **H heal green 100** (+2 HP), **D damage red +25%/lvl max5 base 150**, **S speed blue +8%/lvl max5 base 120**; level price = base + 200·lvl; denied/MAX hints; live price tags (`DMG 650`) float over the machines
+- roulette 100 → weighted weapon (SMG 40 / pistol 15 / shotgun 30 / rifle 15); weapons come only from roulette, never bought directly; start pistol (dmg1/cd500); SMG (dmg1/cd180); shotgun (3 pellets/cd900); rifle (dmg4/cd800)
 - panel shows `POINTS/W+K/GUN` + HP/DMG/SPD pips (text, no sprites); prompt is the arena-centred strip owned by `render`
-- zombies: normal (40/hp 2+wave/2/+10), **runner** (70/hp1/+15, orange), **boss** every wave%5==0 (30/hp25/+200, purple, 1 of 8 slots); `render` colours by `actor.kind`
+- zombies: normal (40/hp 2+wave/2, +10+5·wave pts), **runner** (70/hp1/+15, orange), **boss** every wave%5==0 (30/hp25/+200, purple, 1 of 8 slots); `render` colours by `actor.kind`
 
 ## Roadmap
 

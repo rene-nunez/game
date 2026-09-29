@@ -22,10 +22,10 @@ class sim {
     // shop: points are the spendable wallet. Heal is flat; damage and speed are
     // permanent levels on the character (like HP) and each level costs more.
     static constexpr uint32_t PRICE_HEAL = 100; // +2 HP
-    static constexpr uint32_t PRICE_DMG = 150;  // damage +20%/level, base price
+    static constexpr uint32_t PRICE_DMG = 150;  // damage +25%/level, base price
     static constexpr uint32_t PRICE_SPD = 120;  // speed +8%/level, base price
     static constexpr uint32_t PRICE_ROLL = 100; // roulette: random weapon
-    static constexpr uint32_t LVL_PRICE_STEP = 250; // extra cost per level owned
+    static constexpr uint32_t LVL_PRICE_STEP = 200; // extra cost per level owned
 
     struct state {
       struct actor {
@@ -69,7 +69,6 @@ class sim {
     static uint32_t price_for(uint32_t base, uint8_t lvl); // base + STEP*lvl
     static const char* gun_name();
     static const char* gun_name(weapon w);
-
   private:
     static constexpr float player_speed = 110.0f;
     static constexpr float zombie_speed = 40.0f;
@@ -79,7 +78,6 @@ class sim {
     static constexpr float hit_dist = 5.0f;
     static constexpr float contact_dist = 9.0f;
     static constexpr uint32_t damage_cd_ms = 500;
-    static constexpr uint32_t points_per_kill = 10;
 
     // 8-neighbourhood, cardinals first: the zombie aims at the best neighbour's centre,
     // so a diagonal step reads as smooth drift instead of a tile-by-tile shuffle
@@ -99,8 +97,12 @@ class sim {
     static void _do_fire(uint32_t now);
     static uint32_t _fire_cd(weapon w);
     static uint8_t _base_dmg(weapon w);
-    static uint8_t _eff_dmg(uint8_t base, uint8_t lvl); // base*(1+0.2*lvl), half-up, min 1
+    static uint8_t _eff_dmg(uint8_t base, uint8_t lvl); // base*(1+0.25*lvl), half-up, min 1
     static float _spd_mult(uint8_t lvl);                // 1+0.08*lvl
     static uint8_t _zombie_hp(uint8_t wave);            // 2 + wave/2
+    static uint32_t _kill_reward(uint8_t wave);         // 10 + 5*wave, funds the shop curve
+    // roulette odds over r = rand % 100: SMG 40, pistol 15, shotgun 30, rifle 15.
+    // SMG and shotgun hit more often; the pistol can come back as the booby prize.
+    static weapon _roll_weapon(uint8_t r);
     static uint8_t _fire_one(uint32_t now, float dx, float dy, uint8_t dmg);
 };

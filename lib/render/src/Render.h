@@ -25,6 +25,7 @@ class render {
   private:
     static constexpr uint8_t PAINT_CHUNK = 80; // arena rows repainted per frame
     static constexpr int16_t _prompt_h = 10;   // prompt strip height at the arena bottom
+    static constexpr int16_t _tag_max_w = 8 * 6; // widest price tag ("DMG 1150"), for erasing
 
     static int16_t _cam_x, _cam_y;
     static int16_t _paint_y; // next arena row to repaint, ARENA_H when idle
