@@ -8,10 +8,11 @@
 
 sim::state sim::_s;
 uint32_t sim::_last_ms = 0;
-uint32_t sim::_last_shot = 0;
-uint32_t sim::_last_damage = 0;
-int16_t sim::_path_tx = -1;
-int16_t sim::_path_ty = -1;
+uint32_t sim::_last_shot[sim::NUM_PLAYERS] = {0, 0};
+uint32_t sim::_last_damage[sim::NUM_PLAYERS] = {0, 0};
+int16_t sim::_path_tx[sim::NUM_PLAYERS] = {-1, -1};
+int16_t sim::_path_ty[sim::NUM_PLAYERS] = {-1, -1};
+sim::ctl sim::_p2ctl = {};
 
 constexpr int8_t sim::nbr_x[8];
 constexpr int8_t sim::nbr_y[8];
@@ -28,19 +29,48 @@ void sim::reset() {
   _s.dmg_lvl = 0;
   _s.spd_lvl = 0;
   _s.last_event = event::none;
-  _last_shot = 0;
-  _last_damage = 0;
-  _s.player_hp = PLAYER_HP_MAX;
+  _last_shot[0] = _last_shot[1] = 0;
+  _last_damage[0] = _last_damage[1] = 0;
+  _p2ctl = {};
 
-  _s.player = {
+  _s.players[0] = {
       (float)tilemap::spawn_px - PLAYER_SIZE / 2.0f,
       (float)tilemap::spawn_py - PLAYER_SIZE / 2.0f,
+      PLAYER_HP_MAX,
+      true,
   };
+  _s.players[1] = {_s.players[0].x, _s.players[0].y, 0, false}; // Solo: no peer yet
 
-  _path_tx = -1; // force a fresh field at the new spawn
-  _path_ty = -1;
+  _path_tx[0] = _path_tx[1] = -1; // force fresh fields at the new spawn
+  _path_ty[0] = _path_ty[1] = -1;
 
   _spawn_wave();
+}
+
+bool sim::_alive(uint8_t p) {
+  return _s.players[p].active && _s.players[p].hp > 0;
+}
+
+void sim::set_p2_active(bool active) {
+  _s.players[1].active = active;
+  if (active) {
+    _respawn(1);
+  } else {
+    _s.players[1].hp = 0;
+  }
+  _path_tx[1] = -1; // its field must rebuild for the new state
+  _path_ty[1] = -1;
+}
+
+void sim::set_p2(const ctl& c) {
+  _p2ctl = c;
+}
+
+void sim::_respawn(uint8_t p) {
+  _s.players[p].x = (float)tilemap::spawn_px - PLAYER_SIZE / 2.0f + (float)(p * (PLAYER_SIZE + 2));
+  _s.players[p].y = (float)tilemap::spawn_py - PLAYER_SIZE / 2.0f;
+  _s.players[p].hp = PLAYER_HP_MAX;
+  _last_damage[p] = 0;
 }
 
 void sim::_move_entity(float& x, float& y, float dx, float dy, uint8_t size) {
@@ -70,7 +100,8 @@ bool sim::_step_zombie(uint8_t z, float ddx, float ddy, float dt) {
   return _s.zombies[z].x != bx || _s.zombies[z].y != by;
 }
 
-void sim::_zombie_steer(uint8_t z, float pcx, float pcy, float dt) {
+void sim::_zombie_steer(uint8_t z, float pcx, float pcy, float dt,
+                         const uint16_t f[tilemap::ROWS][tilemap::COLS]) {
   const float zcx = _s.zombies[z].x + ZOMBIE_SIZE / 2.0f;
   const float zcy = _s.zombies[z].y + ZOMBIE_SIZE / 2.0f;
   int16_t ztx = (int16_t)(zcx / tilemap::TILE);
@@ -87,7 +118,7 @@ void sim::_zombie_steer(uint8_t z, float pcx, float pcy, float dt) {
     zty = tilemap::ROWS - 1;
   }
 
-  const uint16_t here = tilemap::field[zty][ztx];
+  const uint16_t here = f[zty][ztx];
 
   if (here == 0) {
     return; // on the player's tile, the contact check lands the hit
@@ -110,7 +141,7 @@ void sim::_zombie_steer(uint8_t z, float pcx, float pcy, float dt) {
       if (nx < 0 || nx >= tilemap::COLS || ny < 0 || ny >= tilemap::ROWS) {
         continue;
       }
-      const uint16_t d = tilemap::field[ny][nx];
+      const uint16_t d = f[ny][nx];
       if (d < best_d) {
         best_d = d;
         best = (int8_t)k;
@@ -133,6 +164,11 @@ void sim::_zombie_steer(uint8_t z, float pcx, float pcy, float dt) {
 
 void sim::_spawn_wave() {
   ++_s.wave;
+  for (uint8_t p = 0; p < NUM_PLAYERS; ++p) {
+    if (_s.players[p].active && _s.players[p].hp == 0) {
+      _respawn(p); // the fallen rejoin every wave
+    }
+  }
   for (uint8_t i = 0; i < MAX_ZOMBIES; ++i) {
     _s.zombies[i].active = false;
   }
@@ -142,8 +178,11 @@ void sim::_spawn_wave() {
   // wave (from wave 2) are runners, the rest normals. 8 slots max, always.
   const bool boss = _wave_boss(_s.wave);
   const uint8_t runners = _wave_runners(_s.wave, count);
-  const float px = _s.player.x + PLAYER_SIZE / 2.0f;
-  const float py = _s.player.y + PLAYER_SIZE / 2.0f;
+  const float px0 = _s.players[0].x + PLAYER_SIZE / 2.0f;
+  const float py0 = _s.players[0].y + PLAYER_SIZE / 2.0f;
+  const float px1 = _s.players[1].x + PLAYER_SIZE / 2.0f;
+  const float py1 = _s.players[1].y + PLAYER_SIZE / 2.0f;
+  const bool p1_out = _alive(1);
   const uint16_t total = (uint16_t)(tilemap::COLS * tilemap::ROWS);
   const int16_t off = (int16_t)((tilemap::TILE - ZOMBIE_SIZE) / 2);
 
@@ -162,10 +201,16 @@ void sim::_spawn_wave() {
       }
       const float x = (float)(tx * tilemap::TILE + off);
       const float y = (float)(ty * tilemap::TILE + off);
-      const float dx = x - px;
-      const float dy = y - py;
-      if (dx * dx + dy * dy < (float)spawn_min_d2 && k + 1 < total) {
-        continue; // too close to the player, keep looking
+      const float dx0 = x - px0;
+      const float dy0 = y - py0;
+      bool close = dx0 * dx0 + dy0 * dy0 < (float)spawn_min_d2;
+      if (!close && p1_out) { // keep clear of both players, not just player 1
+        const float dx1 = x - px1;
+        const float dy1 = y - py1;
+        close = dx1 * dx1 + dy1 * dy1 < (float)spawn_min_d2;
+      }
+      if (close && k + 1 < total) {
+        continue; // too close to a player, keep looking
       }
       _s.zombies[i] = { x, y, _zombie_hp(kind, _s.wave), true, kind };
       break;
@@ -248,9 +293,9 @@ uint8_t sim::_base_dmg(weapon w) {
   }
 }
 
-uint8_t sim::_fire_one(uint32_t now, float dx, float dy, uint8_t dmg) {
-  const float bx = _s.player.x + PLAYER_SIZE / 2.0f;
-  const float by = _s.player.y + PLAYER_SIZE / 2.0f;
+uint8_t sim::_fire_one(uint32_t now, float dx, float dy, uint8_t dmg, uint8_t p) {
+  const float bx = _s.players[p].x + PLAYER_SIZE / 2.0f;
+  const float by = _s.players[p].y + PLAYER_SIZE / 2.0f;
   for (uint8_t i = 0; i < MAX_BULLETS; ++i) {
     if (!_s.bullets[i].active) {
       _s.bullets[i] = {
@@ -261,26 +306,28 @@ uint8_t sim::_fire_one(uint32_t now, float dx, float dy, uint8_t dmg) {
           dmg,
           true,
       };
-      _last_shot = now;
+      _last_shot[p] = now;
       return 1;
     }
   }
   return 0; // rack is full: keep the cooldown so the next press retries
 }
 
-void sim::_do_fire(uint32_t now) {
-  if (now - _last_shot < _fire_cd(_s.gun)) {
+void sim::_do_fire(uint32_t now, uint8_t p) {
+  if (now - _last_shot[p] < _fire_cd(_s.gun)) {
     return;
   }
 
+  const float ox = _s.players[p].x;
+  const float oy = _s.players[p].y;
   int16_t best = -1;
   float best_d = fire_range * fire_range;
   for (uint8_t i = 0; i < MAX_ZOMBIES; ++i) {
     if (!_s.zombies[i].active) {
       continue;
     }
-    const float dx = _s.zombies[i].x - _s.player.x;
-    const float dy = _s.zombies[i].y - _s.player.y;
+    const float dx = _s.zombies[i].x - ox;
+    const float dy = _s.zombies[i].y - oy;
     const float d = dx * dx + dy * dy;
     if (d <= best_d) {
       best_d = d;
@@ -291,8 +338,8 @@ void sim::_do_fire(uint32_t now) {
     return;
   }
 
-  const float bx = _s.player.x + PLAYER_SIZE / 2.0f;
-  const float by = _s.player.y + PLAYER_SIZE / 2.0f;
+  const float bx = ox + PLAYER_SIZE / 2.0f;
+  const float by = oy + PLAYER_SIZE / 2.0f;
   float dx = _s.zombies[best].x + ZOMBIE_SIZE / 2.0f - bx;
   float dy = _s.zombies[best].y + ZOMBIE_SIZE / 2.0f - by;
   const float len = sqrtf(dx * dx + dy * dy);
@@ -305,11 +352,11 @@ void sim::_do_fire(uint32_t now) {
     // 3 pellets fanned around the aim: straight, -0.15rad, +0.15rad
     constexpr float c = 0.988771f; // cos(0.15)
     constexpr float s = 0.149438f; // sin(0.15)
-    fired += _fire_one(now, dx, dy, dmg);
-    fired += _fire_one(now, dx * c - dy * s, dx * s + dy * c, dmg);
-    fired += _fire_one(now, dx * c + dy * s, -dx * s + dy * c, dmg);
+    fired += _fire_one(now, dx, dy, dmg, p);
+    fired += _fire_one(now, dx * c - dy * s, dx * s + dy * c, dmg, p);
+    fired += _fire_one(now, dx * c + dy * s, -dx * s + dy * c, dmg, p);
   } else {
-    fired = _fire_one(now, dx, dy, dmg);
+    fired = _fire_one(now, dx, dy, dmg, p);
   }
   if (fired > 0) {
     _s.last_event = event::shoot;
@@ -324,24 +371,36 @@ bool sim::step(uint32_t now) {
   _last_ms = now;
   _s.last_event = event::none; // buys after step() overwrite this for their frame
 
-  float dx = input::jx();
-  float dy = input::jy();
+  // move + fire per player: player 0 reads the local sticks, player 1 the net ctl
+  for (uint8_t p = 0; p < NUM_PLAYERS; ++p) {
+    if (!_alive(p)) {
+      continue;
+    }
+    float dx = (p == 0) ? input::jx() : _p2ctl.jx;
+    float dy = (p == 0) ? input::jy() : _p2ctl.jy;
 
-  const float len = sqrtf(dx * dx + dy * dy);
-  if (len > 1.0f) { // keep diagonal speed equal
-    dx /= len;
-    dy /= len;
+    const float len = sqrtf(dx * dx + dy * dy);
+    if (len > 1.0f) { // keep diagonal speed equal
+      dx /= len;
+      dy /= len;
+    }
+
+    const float spd = player_speed * _spd_mult(_s.spd_lvl);
+    _move_entity(_s.players[p].x, _s.players[p].y, dx * spd * dt, dy * spd * dt, PLAYER_SIZE);
+
+    if ((p == 0) ? input::fire_pressed() : _p2ctl.fire) {
+      _do_fire(now, p);
+    }
   }
 
-  const float spd = player_speed * _spd_mult(_s.spd_lvl);
-  _move_entity(_s.player.x, _s.player.y, dx * spd * dt, dy * spd * dt, PLAYER_SIZE);
-
-  if (input::fire_pressed()) {
-    _do_fire(now);
-  }
-
-  const float pcx = _s.player.x + PLAYER_SIZE / 2.0f;
-  const float pcy = _s.player.y + PLAYER_SIZE / 2.0f;
+  const float pcx[NUM_PLAYERS] = {
+      _s.players[0].x + PLAYER_SIZE / 2.0f,
+      _s.players[1].x + PLAYER_SIZE / 2.0f,
+  };
+  const float pcy[NUM_PLAYERS] = {
+      _s.players[0].y + PLAYER_SIZE / 2.0f,
+      _s.players[1].y + PLAYER_SIZE / 2.0f,
+  };
 
   for (uint8_t i = 0; i < MAX_BULLETS; ++i) {
     if (!_s.bullets[i].active) {
@@ -379,13 +438,22 @@ bool sim::step(uint32_t now) {
     }
   }
 
-  // the distance field only depends on the player's tile, so rebuild it when that changes
-  const int16_t ptx = (int16_t)pcx / tilemap::TILE;
-  const int16_t pty = (int16_t)pcy / tilemap::TILE;
-  if (ptx != _path_tx || pty != _path_ty) {
-    _path_tx = ptx;
-    _path_ty = pty;
-    tilemap::build_field(ptx, pty);
+  // one distance field per player, rebuilt when that player's tile changes
+  for (uint8_t p = 0; p < NUM_PLAYERS; ++p) {
+    if (!_s.players[p].active) {
+      continue;
+    }
+    const int16_t ptx = (int16_t)pcx[p] / tilemap::TILE;
+    const int16_t pty = (int16_t)pcy[p] / tilemap::TILE;
+    if (ptx != _path_tx[p] || pty != _path_ty[p]) {
+      _path_tx[p] = ptx;
+      _path_ty[p] = pty;
+      if (p == 0) {
+        tilemap::build_field(ptx, pty);
+      } else {
+        tilemap::build_field2(ptx, pty);
+      }
+    }
   }
 
   for (uint8_t z = 0; z < MAX_ZOMBIES; ++z) {
@@ -395,24 +463,48 @@ bool sim::step(uint32_t now) {
     const float zcx = _s.zombies[z].x + ZOMBIE_SIZE / 2.0f;
     const float zcy = _s.zombies[z].y + ZOMBIE_SIZE / 2.0f;
 
-    _zombie_steer(z, pcx, pcy, dt);
-
-    const float cdx = pcx - zcx;
-    const float cdy = pcy - zcy;
-    if (cdx * cdx + cdy * cdy <= contact_dist * contact_dist &&
-        now - _last_damage >= damage_cd_ms) {
-      _last_damage = now;
-      const uint8_t dmg = _zombie_dmg(_s.zombies[z].kind);
-      if (_s.player_hp > dmg) {
-        _s.player_hp = (uint8_t)(_s.player_hp - dmg);
-      } else {
-        _s.player_hp = 0;
+    // chase the nearest alive player, down that player's field
+    uint8_t tgt = 0;
+    float best = 1e30f;
+    for (uint8_t p = 0; p < NUM_PLAYERS; ++p) {
+      if (!_alive(p)) {
+        continue;
       }
-      _s.last_event = event::hurt;
+      const float tdx = pcx[p] - zcx;
+      const float tdy = pcy[p] - zcy;
+      const float d2 = tdx * tdx + tdy * tdy;
+      if (d2 < best) {
+        best = d2;
+        tgt = p;
+      }
+    }
+    _zombie_steer(z, pcx[tgt], pcy[tgt], dt, (tgt == 0) ? tilemap::field : tilemap::field2);
+
+    for (uint8_t p = 0; p < NUM_PLAYERS; ++p) {
+      if (!_alive(p)) {
+        continue;
+      }
+      const float cdx = pcx[p] - zcx;
+      const float cdy = pcy[p] - zcy;
+      if (cdx * cdx + cdy * cdy <= contact_dist * contact_dist &&
+          now - _last_damage[p] >= damage_cd_ms) {
+        _last_damage[p] = now;
+        const uint8_t dmg = _zombie_dmg(_s.zombies[z].kind);
+        if (_s.players[p].hp > dmg) {
+          _s.players[p].hp = (uint8_t)(_s.players[p].hp - dmg);
+        } else {
+          _s.players[p].hp = 0;
+        }
+        _s.last_event = event::hurt;
+      }
     }
   }
 
-  if (_s.player_hp == 0) {
+  bool anyone = false;
+  for (uint8_t p = 0; p < NUM_PLAYERS; ++p) {
+    anyone |= _alive(p);
+  }
+  if (!anyone) {
     _s.last_event = event::over;
     return false; // the caller raises the game over screen, sim never touches it
   }
@@ -431,20 +523,23 @@ uint32_t sim::price_for(uint32_t base, uint8_t lvl) {
   return base + LVL_PRICE_STEP * (uint32_t)lvl;
 }
 
-bool sim::buy_heal(uint32_t now) {
+bool sim::buy_heal(uint32_t now, uint8_t p) {
   (void)now;
-  if (_s.player_hp >= PLAYER_HP_MAX || _s.points < PRICE_HEAL) {
-    _s.last_event = event::denied; // full HP or broke
+  if (p >= NUM_PLAYERS || !_alive(p) || _s.players[p].hp >= PLAYER_HP_MAX ||
+      _s.points < PRICE_HEAL) {
+    _s.last_event = event::denied; // full HP, broke, or no such player
     return false;
   }
   _s.points -= PRICE_HEAL; // exact points pay
-  _s.player_hp = (uint8_t)(_s.player_hp + 2 > PLAYER_HP_MAX ? PLAYER_HP_MAX : _s.player_hp + 2);
+  _s.players[p].hp = (uint8_t)(_s.players[p].hp + 2 > PLAYER_HP_MAX ? PLAYER_HP_MAX
+                                                                   : _s.players[p].hp + 2);
   _s.last_event = event::buy_heal;
   return true;
 }
 
-bool sim::buy_damage(uint32_t now) {
+bool sim::buy_damage(uint32_t now, uint8_t p) {
   (void)now;
+  (void)p; // levels are shared, either player may buy
   if (_s.dmg_lvl >= MAX_LVL) {
     _s.last_event = event::denied; // capped, like a full HP bar
     return false;
@@ -460,8 +555,9 @@ bool sim::buy_damage(uint32_t now) {
   return true;
 }
 
-bool sim::buy_speed(uint32_t now) {
+bool sim::buy_speed(uint32_t now, uint8_t p) {
   (void)now;
+  (void)p; // levels are shared, either player may buy
   if (_s.spd_lvl >= MAX_LVL) {
     _s.last_event = event::denied; // capped, like a full HP bar
     return false;
@@ -477,8 +573,9 @@ bool sim::buy_speed(uint32_t now) {
   return true;
 }
 
-bool sim::roll_roulette(uint32_t now) {
+bool sim::roll_roulette(uint32_t now, uint8_t p) {
   (void)now;
+  (void)p; // the gun is shared, either player may roll
   if (_s.points < PRICE_ROLL) {
     _s.last_event = event::denied;
     return false;
@@ -513,4 +610,67 @@ const char* sim::gun_name(weapon w) {
 
 const char* sim::gun_name() {
   return gun_name(_s.gun);
+}
+
+void sim::snapshot(net::game_state_msg& n) {
+  for (uint8_t p = 0; p < NUM_PLAYERS; ++p) {
+    n.players[p].x = net::qpos(_s.players[p].x);
+    n.players[p].y = net::qpos(_s.players[p].y);
+    n.players[p].hp = _s.players[p].hp;
+    n.players[p].flags = _s.players[p].active ? net::PF_ACTIVE : 0;
+  }
+  n.wave = _s.wave;
+  n.kills = _s.kills;
+  n.points = _s.points;
+  n.gun = (uint8_t)_s.gun;
+  n.dmg_lvl = _s.dmg_lvl;
+  n.spd_lvl = _s.spd_lvl;
+  n.event = (uint8_t)_s.last_event;
+  for (uint8_t i = 0; i < MAX_ZOMBIES; ++i) {
+    n.zombies[i].x = net::qpos(_s.zombies[i].x);
+    n.zombies[i].y = net::qpos(_s.zombies[i].y);
+    n.zombies[i].hp = _s.zombies[i].hp;
+    n.zombies[i].flags = (_s.zombies[i].active ? net::ZF_ACTIVE : 0) |
+                         (uint8_t)((uint8_t)_s.zombies[i].kind << net::ZF_KIND_SHIFT);
+  }
+  for (uint8_t i = 0; i < MAX_BULLETS; ++i) {
+    n.bullets[i].x = net::qpos(_s.bullets[i].x);
+    n.bullets[i].y = net::qpos(_s.bullets[i].y);
+    n.bullets[i].angle = net::qangle(_s.bullets[i].vx, _s.bullets[i].vy);
+    n.bullets[i].flags = (_s.bullets[i].active ? net::BF_ACTIVE : 0) |
+                         (uint8_t)(_s.bullets[i].dmg << net::BF_DMG_SHIFT);
+  }
+}
+
+void sim::apply_snapshot(const net::game_state_msg& n) {
+  for (uint8_t p = 0; p < NUM_PLAYERS; ++p) {
+    _s.players[p].x = net::uqpos(n.players[p].x);
+    _s.players[p].y = net::uqpos(n.players[p].y);
+    _s.players[p].hp = n.players[p].hp;
+    _s.players[p].active = (n.players[p].flags & net::PF_ACTIVE) != 0;
+  }
+  _s.wave = n.wave;
+  _s.kills = n.kills;
+  _s.points = n.points;
+  _s.gun = (weapon)n.gun;
+  _s.dmg_lvl = n.dmg_lvl;
+  _s.spd_lvl = n.spd_lvl;
+  _s.last_event = (event)n.event;
+  for (uint8_t i = 0; i < MAX_ZOMBIES; ++i) {
+    _s.zombies[i].x = net::uqpos(n.zombies[i].x);
+    _s.zombies[i].y = net::uqpos(n.zombies[i].y);
+    _s.zombies[i].hp = n.zombies[i].hp;
+    _s.zombies[i].active = (n.zombies[i].flags & net::ZF_ACTIVE) != 0;
+    _s.zombies[i].kind = (actor_kind)((n.zombies[i].flags >> net::ZF_KIND_SHIFT) & 0x03);
+  }
+  for (uint8_t i = 0; i < MAX_BULLETS; ++i) {
+    _s.bullets[i].x = net::uqpos(n.bullets[i].x);
+    _s.bullets[i].y = net::uqpos(n.bullets[i].y);
+    float dx, dy;
+    net::uqangle(n.bullets[i].angle, dx, dy);
+    _s.bullets[i].vx = dx * bullet_speed;
+    _s.bullets[i].vy = dy * bullet_speed;
+    _s.bullets[i].dmg = (uint8_t)((n.bullets[i].flags >> net::BF_DMG_SHIFT) & 0x1F);
+    _s.bullets[i].active = (n.bullets[i].flags & net::BF_ACTIVE) != 0;
+  }
 }

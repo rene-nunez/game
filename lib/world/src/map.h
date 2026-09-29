@@ -64,8 +64,11 @@ namespace tilemap {
   // BFS distance field to a target tile, in tile steps, over walkable tiles only.
   // UNREACHABLE marks the tiles the target cannot reach. Every reachable tile with
   // d > 0 has a 4-neighbour with d - 1, so walking downhill never gets stuck.
+  // field2 is the second player's field (F6 co-op): each zombie descends the field
+  // of its nearest alive player. dist_at reads field (player 1).
   constexpr uint16_t UNREACHABLE = 0xFFFF;
   extern uint16_t field[ROWS][COLS];
+  extern uint16_t field2[ROWS][COLS];
 
   void init();
   bool solid(int16_t tx, int16_t ty);
@@ -74,5 +77,6 @@ namespace tilemap {
   uint16_t color(uint8_t tile);
   uint16_t color_at(int16_t wx, int16_t wy);
   void build_field(int16_t tx, int16_t ty);
+  void build_field2(int16_t tx, int16_t ty);
   uint16_t dist_at(int16_t wx, int16_t wy);
 }

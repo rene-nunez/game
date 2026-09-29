@@ -7,8 +7,8 @@
 
 #include "Panel.h"
 
-int16_t panel::_mm_px[1 + sim::MAX_ZOMBIES] = {0};
-int16_t panel::_mm_py[1 + sim::MAX_ZOMBIES] = {0};
+int16_t panel::_mm_px[2 + sim::MAX_ZOMBIES] = {0};
+int16_t panel::_mm_py[2 + sim::MAX_ZOMBIES] = {0};
 uint8_t panel::_mm_n = 0;
 int16_t panel::_mm_ctx = -1; // camera cell tile whose frame is on the minimap, -1 = none yet
 int16_t panel::_mm_cty = -1;
@@ -79,10 +79,19 @@ void panel::draw() {
   snprintf(buf, sizeof(buf), "GUN %s", sim::gun_name());
   display::text(buf, 4, render::ARENA_BOTTOM + 24, colour::white, 1);
 
-  const uint16_t hp_col = (v.player_hp <= 2) ? colour::red : colour::green;
-  _pip_row(render::ARENA_BOTTOM + 34, "HP", v.player_hp, sim::PLAYER_HP_MAX, hp_col);
-  _pip_row(render::ARENA_BOTTOM + 44, "DMG", v.dmg_lvl, sim::MAX_LVL, colour::red);
-  _pip_row(render::ARENA_BOTTOM + 54, "SPD", v.spd_lvl, sim::MAX_LVL,
+  // co-op squeezes the rows (8px pitch) to fit the second HP line; solo keeps 10px
+  const bool p2 = v.players[1].active;
+  const int16_t hp_y = p2 ? render::ARENA_BOTTOM + 32 : render::ARENA_BOTTOM + 34;
+  const int16_t tail_y = hp_y + (p2 ? 16 : 10);
+
+  const uint16_t hp_col = (v.players[0].hp <= 2) ? colour::red : colour::green;
+  _pip_row(hp_y, "HP", v.players[0].hp, sim::PLAYER_HP_MAX, hp_col);
+  if (p2) {
+    const uint16_t h2_col = (v.players[1].hp <= 2) ? colour::red : colour::cyan;
+    _pip_row(hp_y + 8, "H2", v.players[1].hp, sim::PLAYER_HP_MAX, h2_col);
+  }
+  _pip_row(tail_y, "DMG", v.dmg_lvl, sim::MAX_LVL, colour::red);
+  _pip_row(tail_y + (p2 ? 8 : 10), "SPD", v.spd_lvl, sim::MAX_LVL,
            display::rgb565(60, 130, 230));
 }
 
@@ -120,7 +129,7 @@ void panel::_mm_restore_col(int16_t tx, int16_t ty0, int16_t ty1) {
 }
 
 void panel::_mm_dot(int16_t wx, int16_t wy, uint16_t col) {
-  if (_mm_n >= (uint8_t)(1 + sim::MAX_ZOMBIES)) {
+  if (_mm_n >= (uint8_t)(2 + sim::MAX_ZOMBIES)) {
     return;
   }
   display::fill_rect(_mm_x() + (wx / tilemap::TILE) * _mm_scale, _mm_y + (wy / tilemap::TILE) * _mm_scale,
@@ -170,7 +179,10 @@ void panel::blips() {
   _mm_frame();
 
   const sim::state& v = sim::view();
-  _mm_dot((int16_t)v.player.x, (int16_t)v.player.y, colour::white);
+  _mm_dot((int16_t)v.players[0].x, (int16_t)v.players[0].y, colour::white);
+  if (v.players[1].active) {
+    _mm_dot((int16_t)v.players[1].x, (int16_t)v.players[1].y, colour::cyan);
+  }
   for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
     if (v.zombies[i].active) {
       uint16_t col = colour::red;

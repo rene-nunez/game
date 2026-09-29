@@ -6,6 +6,7 @@ namespace tilemap {
   uint16_t spawn_px = 0;
   uint16_t spawn_py = 0;
   uint16_t field[ROWS][COLS];
+  uint16_t field2[ROWS][COLS];
 
   static bool _walkable_tile(uint8_t t) {
     return t == FLOOR;
@@ -235,10 +236,10 @@ namespace tilemap {
   static const int8_t _step_y[4] = {0, 0, 1, -1};
   static uint16_t _queue[COLS * ROWS];
 
-  void build_field(int16_t tx, int16_t ty) {
+  void _build_into(uint16_t f[ROWS][COLS], int16_t tx, int16_t ty) {
     for (uint8_t r = 0; r < ROWS; ++r) {
       for (uint8_t c = 0; c < COLS; ++c) {
-        field[r][c] = UNREACHABLE;
+        f[r][c] = UNREACHABLE;
       }
     }
     if (tx < 0 || tx >= (int16_t)COLS || ty < 0 || ty >= (int16_t)ROWS || solid(tx, ty)) {
@@ -246,22 +247,30 @@ namespace tilemap {
     }
 
     uint16_t head = 0, tail = 0; // each tile is queued at most once, so tail <= COLS * ROWS
-    field[ty][tx] = 0;
+    f[ty][tx] = 0;
     _queue[tail++] = (uint16_t)(ty * COLS + tx);
 
     while (head < tail) {
       const uint16_t idx = _queue[head++];
       const int16_t cx = (int16_t)(idx % COLS), cy = (int16_t)(idx / COLS);
-      const uint16_t nd = (uint16_t)(field[cy][cx] + 1);
+      const uint16_t nd = (uint16_t)(f[cy][cx] + 1);
 
       for (uint8_t k = 0; k < 4; ++k) {
         const int16_t nx = (int16_t)(cx + _step_x[k]), ny = (int16_t)(cy + _step_y[k]);
         if (nx < 0 || nx >= (int16_t)COLS || ny < 0 || ny >= (int16_t)ROWS) continue;
-        if (field[ny][nx] != UNREACHABLE || solid(nx, ny)) continue;
-        field[ny][nx] = nd;
+        if (f[ny][nx] != UNREACHABLE || solid(nx, ny)) continue;
+        f[ny][nx] = nd;
         _queue[tail++] = (uint16_t)(ny * COLS + nx);
       }
     }
+  }
+
+  void build_field(int16_t tx, int16_t ty) {
+    _build_into(field, tx, ty);
+  }
+
+  void build_field2(int16_t tx, int16_t ty) {
+    _build_into(field2, tx, ty);
   }
 
   uint16_t dist_at(int16_t wx, int16_t wy) {

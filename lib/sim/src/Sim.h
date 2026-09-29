@@ -2,9 +2,15 @@
 
 #include <cstdint>
 
-// The simulation: player, zombies, bullets, waves and points, in world px. It owns its
+#include <NetState.h>
+#include <map.h>
+
+// The simulation: players, zombies, bullets, waves and points, in world px. It owns its
 // state and never touches the screen, the menus or the network, so the renderer, the panel
 // and the menus can only read it through view().
+//
+// F6 co-op: two players share one wallet, gun and buff levels. Player 0 is local (host),
+// player 1 is the net peer (inactive in Solo). Zombies chase their nearest alive player.
 class sim {
   public:
     static constexpr uint8_t PLAYER_SIZE = 8;
@@ -12,6 +18,7 @@ class sim {
     static constexpr uint8_t BULLET_SIZE = 4;
     static constexpr uint8_t MAX_ZOMBIES = 8;
     static constexpr uint8_t MAX_BULLETS = 8;
+    static constexpr uint8_t NUM_PLAYERS = 2;
     static constexpr uint8_t PLAYER_HP_MAX = 5; // the panel draws one pip per point
     static constexpr uint8_t MAX_LVL = 5;       // damage and speed cap here, pips per level
 
@@ -27,6 +34,21 @@ class sim {
     static constexpr uint32_t PRICE_ROLL = 100; // roulette: random weapon
     static constexpr uint32_t LVL_PRICE_STEP = 200; // extra cost per level owned
 
+    struct player_state {
+      float x, y;
+      uint8_t hp; // 0 = dead
+      bool active; // false = no second player (Solo)
+    };
+
+    // remote control for player 1, fed by game from the net each frame. Edges, not
+    // levels: game derives fire/interact/pause edges from the peer's button bitmask.
+    struct ctl {
+      float jx, jy;
+      bool fire;
+      bool interact;
+      bool pause;
+    };
+
     struct state {
       struct actor {
         float x, y;
@@ -39,10 +61,8 @@ class sim {
         uint8_t dmg;
         bool active;
       };
-      struct {
-        float x, y;
-      } player;
-      uint8_t player_hp, wave, kills;
+      player_state players[NUM_PLAYERS];
+      uint8_t wave, kills;
       uint32_t points;
       weapon gun;
       uint8_t dmg_lvl; // permanent damage levels, 0..MAX_LVL
@@ -57,14 +77,21 @@ class sim {
     static const state& view() { return _s; }
 
     static void reset();
-    static bool step(uint32_t now); // false once the player is out of hp
+    static void set_p2_active(bool active); // Multi start on the host
+    static void set_p2(const ctl& c);       // fresh peer input, every host frame
+    static bool step(uint32_t now); // false once every active player is out of hp
+
+    // net sync: host fills n (game stamps type+seq), client applies it wholesale.
+    static void snapshot(net::game_state_msg& n);
+    static void apply_snapshot(const net::game_state_msg& n);
 
     // shop, called by game on an INTERACT edge near a machine. Exact points pay:
-    // points >= price succeeds. On denial last_event is denied.
-    static bool buy_heal(uint32_t now);
-    static bool buy_damage(uint32_t now);
-    static bool buy_speed(uint32_t now);
-    static bool roll_roulette(uint32_t now);
+    // points >= price succeeds. On denial last_event is denied. Heal lands on
+    // player p, the shared levels/gun benefit both.
+    static bool buy_heal(uint32_t now, uint8_t p = 0);
+    static bool buy_damage(uint32_t now, uint8_t p = 0);
+    static bool buy_speed(uint32_t now, uint8_t p = 0);
+    static bool roll_roulette(uint32_t now, uint8_t p = 0);
 
     static uint32_t price_for(uint32_t base, uint8_t lvl); // base + STEP*lvl
     static const char* gun_name();
@@ -88,16 +115,20 @@ class sim {
     static constexpr int8_t nbr_y[8] = {0, 0, 1, -1, 1, -1, 1, -1};
 
     // host-local runtime state, deliberately outside the view: the frame clock, the fire and
-    // damage cooldowns and the tile the BFS field was last built for are not peer state
+    // damage cooldowns and the tiles the BFS fields were last built for are not peer state
     static state _s;
-    static uint32_t _last_ms, _last_shot, _last_damage;
-    static int16_t _path_tx, _path_ty;
+    static uint32_t _last_ms, _last_damage[NUM_PLAYERS], _last_shot[NUM_PLAYERS];
+    static int16_t _path_tx[NUM_PLAYERS], _path_ty[NUM_PLAYERS];
+    static ctl _p2ctl;
 
+    static bool _alive(uint8_t p); // active and out of the grave
     static void _move_entity(float& x, float& y, float dx, float dy, uint8_t size);
     static bool _step_zombie(uint8_t z, float ddx, float ddy, float dt);
-    static void _zombie_steer(uint8_t z, float pcx, float pcy, float dt);
+    static void _zombie_steer(uint8_t z, float pcx, float pcy, float dt,
+                              const uint16_t f[tilemap::ROWS][tilemap::COLS]);
     static void _spawn_wave();
-    static void _do_fire(uint32_t now);
+    static void _respawn(uint8_t p);
+    static void _do_fire(uint32_t now, uint8_t p);
     static uint32_t _fire_cd(weapon w);
     static uint8_t _base_dmg(weapon w);
     static uint8_t _eff_dmg(uint8_t base, uint8_t lvl); // base*(1+0.25*lvl), half-up, min 1
@@ -112,5 +143,5 @@ class sim {
     // roulette odds over r = rand % 100: SMG 40, pistol 15, shotgun 30, rifle 15.
     // SMG and shotgun hit more often; the pistol can come back as the booby prize.
     static weapon _roll_weapon(uint8_t r);
-    static uint8_t _fire_one(uint32_t now, float dx, float dy, uint8_t dmg);
+    static uint8_t _fire_one(uint32_t now, float dx, float dy, uint8_t dmg, uint8_t p);
 };

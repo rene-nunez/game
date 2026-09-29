@@ -31,6 +31,7 @@ int16_t game::_shop_rx = -1;
 int16_t game::_shop_ry = -1;
 char game::_hint_buf[28] = {0};
 uint32_t game::_hint_until = 0;
+bool game::_p2_interact = false;
 
 uint32_t game::_last_frame_ms = 0;
 uint32_t game::_intro_ms0 = 0;
@@ -180,27 +181,38 @@ void game::_scan_shops() {
 
 void game::_shop_update(uint32_t now) {
   const sim::state& v = sim::view();
-  const float pcx = v.player.x + sim::PLAYER_SIZE / 2.0f;
-  const float pcy = v.player.y + sim::PLAYER_SIZE / 2.0f;
+  const float pcx[2] = {
+      v.players[0].x + sim::PLAYER_SIZE / 2.0f,
+      v.players[1].x + sim::PLAYER_SIZE / 2.0f,
+  };
+  const float pcy[2] = {
+      v.players[0].y + sim::PLAYER_SIZE / 2.0f,
+      v.players[1].y + sim::PLAYER_SIZE / 2.0f,
+  };
   const float r2 = (float)(_shop_r * _shop_r);
-  auto near = [&](int16_t sx, int16_t sy) -> bool {
+  auto near = [&](uint8_t p, int16_t sx, int16_t sy) -> bool {
     if (sx < 0) {
       return false;
     }
-    const float dx = pcx - (float)sx;
-    const float dy = pcy - (float)sy;
+    const float dx = pcx[p] - (float)sx;
+    const float dy = pcy[p] - (float)sy;
     return dx * dx + dy * dy <= r2;
   };
-  uint8_t shop = 0; // 1 heal, 2 damage, 3 speed, 4 roulette
-  if (near(_shop_hx, _shop_hy)) {
-    shop = 1;
-  } else if (near(_shop_dx, _shop_dy)) {
-    shop = 2;
-  } else if (near(_shop_sx, _shop_sy)) {
-    shop = 3;
-  } else if (near(_shop_rx, _shop_ry)) {
-    shop = 4;
-  }
+  auto shop_at = [&](uint8_t p) -> uint8_t { // 1 heal, 2 damage, 3 speed, 4 roulette
+    if (near(p, _shop_hx, _shop_hy)) {
+      return 1;
+    } else if (near(p, _shop_dx, _shop_dy)) {
+      return 2;
+    } else if (near(p, _shop_sx, _shop_sy)) {
+      return 3;
+    } else if (near(p, _shop_rx, _shop_ry)) {
+      return 4;
+    }
+    return 0;
+  };
+  const uint8_t shop = shop_at(0);
+  const bool p2_out = v.players[1].active && v.players[1].hp > 0;
+  const uint8_t shop2 = p2_out ? shop_at(1) : 0;
 
   if (input::interact_pressed() && shop != 0) {
     bool ok = false;
@@ -211,7 +223,7 @@ void game::_shop_update(uint32_t now) {
           snprintf(_hint_buf, sizeof(_hint_buf), "HEALED +2HP");
         } else {
           snprintf(_hint_buf, sizeof(_hint_buf),
-                   v.player_hp >= sim::PLAYER_HP_MAX ? "HP FULL" : "NEED %lu",
+                   v.players[0].hp >= sim::PLAYER_HP_MAX ? "HP FULL" : "NEED %lu",
                    (unsigned long)sim::PRICE_HEAL);
         }
         break;
@@ -253,17 +265,56 @@ void game::_shop_update(uint32_t now) {
     _hint_until = now + 1500;
   }
 
+  // player 2 shops from the shared wallet on its own INTERACT edge (net, F6.3 sets it)
+  if (_p2_interact && shop2 != 0) {
+    bool ok = false;
+    switch (shop2) {
+      case 1:
+        ok = sim::buy_heal(now, 1);
+        snprintf(_hint_buf, sizeof(_hint_buf), ok ? "P2 HEALED" : "P2 NEED %lu",
+                 (unsigned long)sim::PRICE_HEAL);
+        break;
+      case 2:
+        ok = sim::buy_damage(now, 1);
+        snprintf(_hint_buf, sizeof(_hint_buf), ok ? "P2 DMG LV%u!" : "P2 NEED %lu",
+                 (unsigned)sim::view().dmg_lvl,
+                 (unsigned long)sim::price_for(sim::PRICE_DMG, v.dmg_lvl));
+        break;
+      case 3:
+        ok = sim::buy_speed(now, 1);
+        snprintf(_hint_buf, sizeof(_hint_buf), ok ? "P2 SPD LV%u!" : "P2 NEED %lu",
+                 (unsigned)sim::view().spd_lvl,
+                 (unsigned long)sim::price_for(sim::PRICE_SPD, v.spd_lvl));
+        break;
+      default:
+        ok = sim::roll_roulette(now, 1);
+        if (ok) {
+          snprintf(_hint_buf, sizeof(_hint_buf), "P2 GUN: %s", sim::gun_name());
+        } else {
+          snprintf(_hint_buf, sizeof(_hint_buf), "P2 NEED %lu", (unsigned long)sim::PRICE_ROLL);
+        }
+        break;
+    }
+    _hint_until = now + 1500;
+  }
+  _p2_interact = false; // consumed every frame, edge semantics
+
   if (now < _hint_until && _hint_buf[0] != '\0') {
     render::prompt(_hint_buf); // recent result wins over the prompt
     return;
   }
-  switch (shop) {
-    case 1: render::prompt("INT: HEAL +2HP"); break;
+  const uint8_t pshop = (shop != 0) ? shop : shop2; // P2 prompts only when P1 is away
+  const char* who = (shop != 0) ? "" : "P2 ";
+  switch (pshop) {
+    case 1:
+      snprintf(_hint_buf, sizeof(_hint_buf), "%sINT: HEAL +2HP", who);
+      render::prompt(_hint_buf);
+      break;
     case 2:
       if (v.dmg_lvl >= sim::MAX_LVL) {
         render::prompt("DMG MAX");
       } else {
-        snprintf(_hint_buf, sizeof(_hint_buf), "INT: DMG LV%u", (unsigned)v.dmg_lvl + 1u);
+        snprintf(_hint_buf, sizeof(_hint_buf), "%sINT: DMG LV%u", who, (unsigned)v.dmg_lvl + 1u);
         render::prompt(_hint_buf);
       }
       break;
@@ -271,11 +322,14 @@ void game::_shop_update(uint32_t now) {
       if (v.spd_lvl >= sim::MAX_LVL) {
         render::prompt("SPD MAX");
       } else {
-        snprintf(_hint_buf, sizeof(_hint_buf), "INT: SPD LV%u", (unsigned)v.spd_lvl + 1u);
+        snprintf(_hint_buf, sizeof(_hint_buf), "%sINT: SPD LV%u", who, (unsigned)v.spd_lvl + 1u);
         render::prompt(_hint_buf);
       }
       break;
-    case 4: render::prompt("INT: ROLL"); break;
+    case 4:
+      snprintf(_hint_buf, sizeof(_hint_buf), "%sINT: ROLL", who);
+      render::prompt(_hint_buf);
+      break;
     default: render::prompt(nullptr); break;
   }
 }

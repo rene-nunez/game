@@ -34,6 +34,7 @@ class game {
     static int16_t _shop_rx, _shop_ry; // roulette centre
     static char _hint_buf[28];         // transient result text ("NEED 100", "GUN: SMG")
     static uint32_t _hint_until;       // result visible while millis() < this
+    static bool _p2_interact;          // player 2 INTERACT edge, set from net (F6), consumed in shop
 
     static void _on_heartbeat(const uint8_t* data, size_t len);
 

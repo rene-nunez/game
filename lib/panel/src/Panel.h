@@ -23,8 +23,8 @@ class panel {
     static constexpr int16_t _mm_gap = 4;
     static constexpr int16_t _mm_y = render::ARENA_BOTTOM + 5;
 
-    static int16_t _mm_px[1 + sim::MAX_ZOMBIES]; // minimap blips drawn last frame
-    static int16_t _mm_py[1 + sim::MAX_ZOMBIES];
+    static int16_t _mm_px[2 + sim::MAX_ZOMBIES]; // minimap blips drawn last frame
+    static int16_t _mm_py[2 + sim::MAX_ZOMBIES];
     static uint8_t _mm_n;
     static int16_t _mm_ctx; // camera cell tile whose frame is on the minimap, -1 = none yet
     static int16_t _mm_cty;
