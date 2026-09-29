@@ -111,7 +111,17 @@ namespace {
     snprintf(buf, sizeof(buf), "Total kills: %lu", points::total_kills());
     display::text(buf, 16, 116, colour::white, 1);
 
-    display::text("FIRE/PAUSE: back", 16, 160, colour::white, 1);
+    const uint8_t n = points::history_len();
+    const points::run* h = points::history();
+    if (n == 0) {
+      display::text("no runs yet", 16, 132, colour::white, 1);
+    }
+    for (uint8_t i = 0; i < n && i < points::HISTORY_N; ++i) {
+      snprintf(buf, sizeof(buf), "R%u P%lu K%lu W%u", i + 1, h[i].pts, h[i].kills, h[i].wave);
+      display::text(buf, 16, (int16_t)(132 + i * 16), colour::white, 1);
+    }
+
+    display::text("FIRE/PAUSE: back", 16, 200, colour::white, 1);
   }
 
   void _full_game_over(uint8_t sel) {

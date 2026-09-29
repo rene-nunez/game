@@ -30,7 +30,7 @@
 - `lib/render` — camera, terrain repaint, arena sprites + shop price tags + centred prompt strip; reads `sim::view()` + `tilemap` (tags are tile-anchored)
 - `lib/panel` — bottom strip: `POINTS/W+K/GUN` + HP/DMG/SPD pips + 2px/tile minimap; reads `render` + `sim::view()`
 - `lib/buzz` — passive-buzzer jingles, non-blocking (`update(now)`); `game` fires it from `sim::last_event`
-- `lib/points` — RTC-backed `{best, total_kills}` today (best = wallet at death); the microSD seam (same 4 functions)
+- `lib/points` — RTC-backed `{best, total_kills}` + last-4 runs `{pts,kills,wave}` recent-first, mirrored to `/z32.json` on microSD; same callers (`load/add_run(kills,wallet,wave)/best/total_kills/history/history_len`)
 - `lib/screens` — `id` enum + item tables + menu chrome
 - `lib/game` — state machine + input edges + **frame order**; only place calling sim + render + panel + screens + buzz together
 - `src/main.cpp` — `game::begin(DEVICE_ROLE)` + `game::update()`

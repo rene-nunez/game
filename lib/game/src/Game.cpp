@@ -147,7 +147,7 @@ void game::_enter_menu() {
 
 void game::_enter_game_over() {
   const sim::state& v = sim::view();
-  points::add_run(v.kills, v.points); // best is the wallet at death: earned minus spent
+  points::add_run(v.kills, v.points, v.wave); // best is the wallet at death: earned minus spent
   _scr = screens::id::game_over;
   _sel = 0;
 }
