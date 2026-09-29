@@ -1,1 +1,65 @@
-# z32
+# Z32 — Survive the Mall
+
+Juego estilo COD Zombies para ESP32 con pantalla TFT de 2.4" (320x240). Sobrevive oleadas de
+zombis en un laberinto, gana puntos por cada baja y gástalos en máquinas expendedoras para
+curarte, subir daño y velocidad, o prueba suerte en la ruleta para conseguir mejores armas.
+
+## Características
+
+- Supervivencia por oleadas infinitas (4 zombis en ronda 1 hasta 8 simultáneos).
+- 4 armas: pistola inicial + SMG, escopeta (3 perdigones) y rifle por ruleta.
+- 3 máquinas expendedoras con niveles permanentes + ruleta de armas.
+- Puntos como cartera: ganas por matar, gastas en tienda; el récord es tu cartera al morir.
+- Minimapa en vivo con posición, zombis y encuadre de cámara.
+- Récord y muertes totales guardados entre partidas (memoria RTC, sobreviven al sueño profundo).
+- Menús: inicio, modo de juego, puntos, pausa y game over. Botón de apagado con sueño profundo.
+
+## Mecánicas
+
+- **Oleadas**: cada ronda trae `ronda + 3` zombis (máximo 8 a la vez). Al limpiarlos llega la siguiente.
+- **Zombis**: vida `2 + ronda/2` (r1=2, r6=5, r10=7). Persiguen por el laberinto y quitan 1 HP
+  por contacto (con 0.5s de inmunidad entre golpes). Jugador con 5 HP.
+- **Puntos**: cada baja paga `10 + 5·ronda` (r1=15 … r6=40). Gastar baja tu cartera; el *Best*
+  guarda la cartera que tenías al morir (ganado menos gastado).
+- **Tiendas** (acércate y pulsa INTERACT):
+  - **H verde — Heal 100**: +2 HP.
+  - **D roja — Daño 150**: +25% de daño por nivel, máximo 5 (pistola pega 2 desde nv2).
+  - **S azul — Velocidad 120**: +8% de velocidad por nivel, máximo 5.
+  - Cada nivel cuesta más: `base + 200·nivel` (p. ej. daño: 150/350/550/750/950). Niveles
+    permanentes, se ven como barras en el panel. Sin puntos o al máximo, avisa (`NEED`, `MAX`).
+- **Ruleta 100**: arma aleatoria entre SMG (rápida), escopeta (abanico de 3) y rifle (daño 4).
+  La pistola nunca vuelve: es solo el arma inicial.
+- **Disparo**: auto-apuntado al zombi más cercano (alcance 160px). Cada arma tiene su cadencia:
+  pistola 0.5s, SMG 0.18s, escopeta 0.9s, rifle 0.8s.
+
+## Controles
+
+| Entrada   | Acción                                              |
+| --------- | --------------------------------------------------- |
+| Joystick  | Moverse (también navega por los menús)              |
+| FIRE      | Disparar / confirmar en menús                       |
+| INTERACT  | Comprar en tiendas y ruleta                         |
+| RELOAD    | Reservado (sin uso)                                 |
+| PAUSE     | Pausa (Continuar / Reiniciar / Salir); salir = menú |
+
+## Pantalla (UI)
+
+- **Arriba**: arena de juego con etiquetas de precio sobre cada máquina (`HEAL 100`, …) y
+  franja central inferior con el prompt de compra (`E: DMG LV3 - 650`, `HEALED +2HP`…).
+- **Abajo (panel)**: `POINTS`, ronda y bajas (`W3 K12`), arma (`GUN SMG`), pips de
+  `HP` (5, en rojo si quedan ≤2), `DMG` y `SPD` (5 niveles) + minimapa con tu punto
+  blanco, zombis rojos y marco amarillo de cámara.
+
+## Hardware (ESP32)
+
+- TFT ST7789 SPI: CS 5, RST 4, DC 2, MOSI 23, SCLK 18, MISO 19, BL 21.
+- Joystick analógico: X 32, Y 33. Botones: FIRE 13, RELOAD 14, INTERACT 15, PAUSE 27.
+- Buzzer pasivo GPIO 26 y microSD (CS 22, comparte SPI) previstos.
+- Compilar: `pio run -e host` | `pio run -e client`.
+
+## En camino
+
+- Más enemigos: *runner* rápido y *boss* cada 5 rondas.
+- Sonido del buzzer (disparos, compras, oleadas…).
+- Intro, pantallas de logo/equipo y guardado en microSD.
+- Multijugador ESP-NOW (un ESP32 hace de host autoritario).
