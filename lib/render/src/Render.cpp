@@ -8,6 +8,7 @@
 
 int16_t render::_cam_x = 0;
 int16_t render::_cam_y = 0;
+uint8_t render::_focus = 0;
 int16_t render::_paint_y = render::ARENA_H;
 const char* render::_prompt = nullptr;
 
@@ -66,27 +67,26 @@ int16_t render::_cell_cam(int16_t p, int16_t step, int16_t max_cam) {
   return cam;
 }
 
+void render::set_focus(uint8_t p) {
+  _focus = (p < sim::NUM_PLAYERS) ? p : 0;
+  _cam_x = -1; // force the camera to snap on the next update
+  _cam_y = -1;
+}
+
 void render::update_camera() {
   const int16_t aw = (int16_t)display::width();
   const sim::state& v = sim::view();
-  // midpoint of the living players, so co-op pans between both; solo is just player 1
-  int32_t sx = 0, sy = 0;
-  uint8_t n = 0;
-  for (uint8_t p = 0; p < sim::NUM_PLAYERS; ++p) {
-    if (v.players[p].active && v.players[p].hp > 0) {
-      sx += (int32_t)(v.players[p].x + sim::PLAYER_SIZE / 2);
-      sy += (int32_t)(v.players[p].y + sim::PLAYER_SIZE / 2);
-      ++n;
-    }
+  // each board frames its own player, so co-op splits across districts freely. A downed
+  // focus still frames its body (spectate the rescue); only an inactive focus falls back.
+  uint8_t f = _focus;
+  if (!v.players[f].active) {
+    f = (f == 0) ? 1 : 0;
   }
-  int16_t pcx, pcy;
-  if (n > 0) {
-    pcx = (int16_t)(sx / n);
-    pcy = (int16_t)(sy / n);
-  } else {
-    pcx = (int16_t)(v.players[0].x + sim::PLAYER_SIZE / 2);
-    pcy = (int16_t)(v.players[0].y + sim::PLAYER_SIZE / 2);
+  if (!v.players[f].active) {
+    f = 0;
   }
+  const int16_t pcx = (int16_t)(v.players[f].x + sim::PLAYER_SIZE / 2);
+  const int16_t pcy = (int16_t)(v.players[f].y + sim::PLAYER_SIZE / 2);
 
   const int16_t cx = _cell_cam(pcx, aw, (int16_t)(tilemap::WORLD_W - aw));
   const int16_t cy = _cell_cam(pcy, ARENA_H, (int16_t)(tilemap::WORLD_H - ARENA_H));
@@ -259,13 +259,17 @@ void render::draw() {
   repaint_step(); // terrain first, so a cut never paints over a live sprite
 
   const sim::state& v = sim::view();
-  if (v.players[0].active && v.players[0].hp > 0) {
-    _fill_world_box((int16_t)v.players[0].x, (int16_t)v.players[0].y, sim::PLAYER_SIZE,
-                    colour::blue);
-  }
-  if (v.players[1].active && v.players[1].hp > 0) {
-    _fill_world_box((int16_t)v.players[1].x, (int16_t)v.players[1].y, sim::PLAYER_SIZE,
-                    colour::cyan);
+  for (uint8_t p = 0; p < sim::NUM_PLAYERS; ++p) {
+    if (!v.players[p].active) {
+      continue;
+    }
+    if (v.players[p].downed) {
+      _fill_world_box((int16_t)v.players[p].x, (int16_t)v.players[p].y, sim::PLAYER_SIZE,
+                      colour::yellow); // body to rescue
+    } else if (v.players[p].hp > 0) {
+      _fill_world_box((int16_t)v.players[p].x, (int16_t)v.players[p].y, sim::PLAYER_SIZE,
+                      p == 0 ? colour::blue : colour::cyan);
+    }
   }
   for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
     if (v.zombies[i].active) {

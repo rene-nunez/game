@@ -178,6 +178,7 @@ int8_t game::_nav_edge() {
 
 void game::_start_game(bool multi) {
   _net_multi = multi;
+  render::set_focus(_handler.role() == ROLE_CLIENT ? 1 : 0); // each board frames its own
   _seq_out = 0;
   _in_buttons = _in_prev = 0;
   _in_jx = _in_jy = 0.0f;
@@ -246,40 +247,72 @@ void game::_scan_shops() {
   }
 }
 
-void game::_shop_update(uint32_t now) {
+uint8_t game::_shop_at(uint8_t p) {
   const sim::state& v = sim::view();
-  const float pcx[2] = {
-      v.players[0].x + sim::PLAYER_SIZE / 2.0f,
-      v.players[1].x + sim::PLAYER_SIZE / 2.0f,
-  };
-  const float pcy[2] = {
-      v.players[0].y + sim::PLAYER_SIZE / 2.0f,
-      v.players[1].y + sim::PLAYER_SIZE / 2.0f,
-  };
+  if (p >= sim::NUM_PLAYERS || !v.players[p].active) {
+    return 0;
+  }
+  const float pcx = v.players[p].x + sim::PLAYER_SIZE / 2.0f;
+  const float pcy = v.players[p].y + sim::PLAYER_SIZE / 2.0f;
   const float r2 = (float)(_shop_r * _shop_r);
-  auto near = [&](uint8_t p, int16_t sx, int16_t sy) -> bool {
+  auto near = [&](int16_t sx, int16_t sy) -> bool {
     if (sx < 0) {
       return false;
     }
-    const float dx = pcx[p] - (float)sx;
-    const float dy = pcy[p] - (float)sy;
+    const float dx = pcx - (float)sx;
+    const float dy = pcy - (float)sy;
     return dx * dx + dy * dy <= r2;
   };
-  auto shop_at = [&](uint8_t p) -> uint8_t { // 1 heal, 2 damage, 3 speed, 4 roulette
-    if (near(p, _shop_hx, _shop_hy)) {
-      return 1;
-    } else if (near(p, _shop_dx, _shop_dy)) {
-      return 2;
-    } else if (near(p, _shop_sx, _shop_sy)) {
-      return 3;
-    } else if (near(p, _shop_rx, _shop_ry)) {
-      return 4;
+  if (near(_shop_hx, _shop_hy)) {
+    return 1;
+  } else if (near(_shop_dx, _shop_dy)) {
+    return 2;
+  } else if (near(_shop_sx, _shop_sy)) {
+    return 3;
+  } else if (near(_shop_rx, _shop_ry)) {
+    return 4;
+  }
+  return 0;
+}
+
+bool game::_revive_near(uint8_t p) {
+  const sim::state& v = sim::view();
+  if (p >= sim::NUM_PLAYERS || !v.players[p].active || v.players[p].hp == 0) {
+    return false; // only the standing can lift
+  }
+  const uint8_t q = (p == 0) ? 1 : 0;
+  if (!v.players[q].active || !v.players[q].downed) {
+    return false;
+  }
+  const float dx = (v.players[p].x - v.players[q].x);
+  const float dy = (v.players[p].y - v.players[q].y);
+  return dx * dx + dy * dy <= (float)(_revive_r * _revive_r);
+}
+
+bool game::_revive_update(uint32_t now) {
+  const bool edge[2] = {input::interact_pressed(), _p2_interact};
+  for (uint8_t p = 0; p < sim::NUM_PLAYERS; ++p) {
+    if (!edge[p] || !_revive_near(p)) {
+      continue;
     }
-    return 0;
-  };
-  const uint8_t shop = shop_at(0);
+    const uint8_t q = (p == 0) ? 1 : 0;
+    if (sim::revive(q)) {
+      snprintf(_hint_buf, sizeof(_hint_buf), p == 0 ? "REVIVED!" : "P2 REVIVED!");
+      _hint_until = now + 1500;
+      if (p == 1) {
+        _p2_interact = false; // consumed: no accidental buy next frame
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+void game::_shop_update(uint32_t now) {
+  const sim::state& v = sim::view();
+  const uint8_t shop = _shop_at(0);
   const bool p2_out = v.players[1].active && v.players[1].hp > 0;
-  const uint8_t shop2 = p2_out ? shop_at(1) : 0;
+  const uint8_t shop2 = p2_out ? _shop_at(1) : 0;
 
   if (input::interact_pressed() && shop != 0) {
     bool ok = false;
@@ -370,9 +403,22 @@ void game::_shop_update(uint32_t now) {
     render::prompt(_hint_buf); // recent result wins over the prompt
     return;
   }
+  if (_revive_near(0)) {
+    render::prompt("INT: REVIVE");
+    return;
+  }
+  if (_revive_near(1)) {
+    render::prompt("P2 INT: REVIVE");
+    return;
+  }
   const uint8_t pshop = (shop != 0) ? shop : shop2; // P2 prompts only when P1 is away
   const char* who = (shop != 0) ? "" : "P2 ";
-  switch (pshop) {
+  _shop_prompt(pshop, who);
+}
+
+void game::_shop_prompt(uint8_t shop, const char* who) {
+  const sim::state& v = sim::view();
+  switch (shop) {
     case 1:
       snprintf(_hint_buf, sizeof(_hint_buf), "%sINT: HEAL +2HP", who);
       render::prompt(_hint_buf);
@@ -431,6 +477,7 @@ void game::_fire_buzz() {
     case sim::event::buy_heal:
     case sim::event::buy_dmg:
     case sim::event::buy_spd: buzz::play(buzz::jingle::buy); break;
+    case sim::event::revive: buzz::play(buzz::jingle::buy); break; // a lift, not a purchase
     case sim::event::roulette: buzz::play(buzz::jingle::roulette); break;
     case sim::event::denied: buzz::play(buzz::jingle::denied); break;
     case sim::event::hurt: buzz::play(buzz::jingle::hurt); break;
@@ -587,8 +634,12 @@ void game::_update_playing_host() {
     }
     return;
   }
-  _shop_update(now); // INTERACT buys + prompt, before the panel paints it
-  _fire_buzz(); // jingle for the frame's event (buys already overwrote shots)
+  if (_revive_update(now)) {
+    render::prompt(_hint_buf); // lift result now, shop waits a frame
+  } else {
+    _shop_update(now); // INTERACT buys + prompt, before the panel paints it
+  }
+  _fire_buzz(); // jingle for the frame's event (revive/buys already overwrote shots)
   render::update_camera();
   render::draw();
   panel::draw();
@@ -629,6 +680,11 @@ void game::_update_playing_client() {
   if (sim::view().last_event == sim::event::over) {
     _enter_game_over(); // host declared it, we only mirror (no SD write, see guard)
     return;
+  }
+  if (_revive_near(1)) {
+    render::prompt("INT: REVIVE"); // local prompt off the snapshot, buys run on the host
+  } else {
+    _shop_prompt(_shop_at(1), "");
   }
   _fire_buzz(); // the snapshot carries the event, so both buzzers sing
   render::update_camera();

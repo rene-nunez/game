@@ -22,6 +22,7 @@ class game {
     static constexpr uint32_t _wait_hb_ms = 200; // heartbeat pace while waiting
     static constexpr uint32_t _in_stale_ms = 300; // peer input older than this goes neutral
     static constexpr uint32_t _cli_quiet_ms = 3000; // no snapshot for this long: back to menu
+    static constexpr int16_t _revive_r = 28; // partner-lift reach, px centre to centre
 
     static uint32_t _last_frame_ms;
     static uint32_t _intro_ms0; // millis() at logo/team entry, anchors the intro timers
@@ -74,6 +75,10 @@ class game {
     static void _broadcast(); // snapshot the sim and send it (host, multi only)
 
     static void _scan_shops();       // cache the 2x2 machine centres, once per run
+    static uint8_t _shop_at(uint8_t p); // nearest machine to player p (0 = none)
+    static void _shop_prompt(uint8_t shop, const char* who); // prompt strip text only
+    static bool _revive_near(uint8_t p); // downed partner within lift reach of p
+    static bool _revive_update(uint32_t now); // INTERACT lifts, true = edge consumed
     static void _shop_update(uint32_t now); // INTERACT buys + panel prompt, after sim::step
     static void _fire_buzz(); // one jingle per sim::last_event, after step()+shop
 

@@ -15,6 +15,7 @@ class render {
     static void repaint();     // schedule a full arena repaint from the tilemap
     static void repaint_step(); // paint up to PAINT_CHUNK pending arena rows
     static void update_camera();
+    static void set_focus(uint8_t p); // co-op: each board frames its own player
     static void clear();       // erase the entities through the tilemap colours
     static void draw();        // terrain, entities, tags and the prompt
     static void prompt(const char* msg); // transient shop prompt, painted centred by draw()
@@ -28,6 +29,7 @@ class render {
     static constexpr int16_t _tag_max_w = 8 * 6; // widest price tag ("DMG 1150"), for erasing
 
     static int16_t _cam_x, _cam_y;
+    static uint8_t _focus; // player the camera follows (host/solo 0, client 1)
     static int16_t _paint_y; // next arena row to repaint, ARENA_H when idle
     static const char* _prompt; // shop prompt for this frame, null = none (set by game)
 

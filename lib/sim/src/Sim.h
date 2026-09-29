@@ -20,11 +20,25 @@ class sim {
     static constexpr uint8_t MAX_BULLETS = 8;
     static constexpr uint8_t NUM_PLAYERS = 2;
     static constexpr uint8_t PLAYER_HP_MAX = 5; // the panel draws one pip per point
+    static constexpr uint8_t REVIVE_HP = 3;     // back on your feet, not back to full
+    static constexpr uint8_t BLEED_SECS = 30;   // bleed-out window before death
     static constexpr uint8_t MAX_LVL = 5;       // damage and speed cap here, pips per level
 
     enum class weapon : uint8_t { pistol, smg, shotgun, rifle };
     enum class actor_kind : uint8_t { normal, runner, boss };
-    enum class event : uint8_t { none, shoot, buy_heal, buy_dmg, buy_spd, roulette, denied, hurt, wave, over };
+    enum class event : uint8_t {
+      none,
+      shoot,
+      buy_heal,
+      buy_dmg,
+      buy_spd,
+      roulette,
+      denied,
+      hurt,
+      wave,
+      over,
+      revive
+    };
 
     // shop: points are the spendable wallet. Heal is flat; damage and speed are
     // permanent levels on the character (like HP) and each level costs more.
@@ -36,8 +50,10 @@ class sim {
 
     struct player_state {
       float x, y;
-      uint8_t hp; // 0 = dead
+      uint8_t hp; // 0 = down or dead
       bool active; // false = no second player (Solo)
+      bool downed; // bleeding out: revive, don't respawn
+      uint8_t bleed; // seconds left while downed
     };
 
     // remote control for player 1, fed by game from the net each frame. Edges, not
@@ -79,7 +95,8 @@ class sim {
     static void reset();
     static void set_p2_active(bool active); // Multi start on the host
     static void set_p2(const ctl& c);       // fresh peer input, every host frame
-    static bool step(uint32_t now); // false once every active player is out of hp
+    static bool step(uint32_t now); // false once nobody is left standing
+    static bool revive(uint8_t p);  // partner lift: downed back to 3 HP
 
     // net sync: host fills n (game stamps type+seq), client applies it wholesale.
     static void snapshot(net::game_state_msg& n);
@@ -118,10 +135,12 @@ class sim {
     // damage cooldowns and the tiles the BFS fields were last built for are not peer state
     static state _s;
     static uint32_t _last_ms, _last_damage[NUM_PLAYERS], _last_shot[NUM_PLAYERS];
+    static uint32_t _bleed_acc[NUM_PLAYERS]; // ms banked toward the next bleed tick
     static int16_t _path_tx[NUM_PLAYERS], _path_ty[NUM_PLAYERS];
     static ctl _p2ctl;
 
-    static bool _alive(uint8_t p); // active and out of the grave
+    static bool _alive(uint8_t p); // active, standing, shooting
+    static bool _downed(uint8_t p); // active, bleeding out, needs a revive
     static void _move_entity(float& x, float& y, float dx, float dy, uint8_t size);
     static bool _step_zombie(uint8_t z, float ddx, float ddy, float dt);
     static void _zombie_steer(uint8_t z, float pcx, float pcy, float dt,

@@ -6,7 +6,7 @@
 // (snapshot/apply_snapshot); game only moves these bytes.
 //
 // Layout (little-endian, same core both ends):
-//   game_state: type(1) + seq(2) + players 2x6 + meta 10 + zombies 8x6 + bullets 8x6 = 121B
+//   game_state: type(1) + seq(2) + players 2x7 + meta 10 + zombies 8x6 + bullets 8x6 = 123B
 //   player_input: type(1) + jx(1) + jy(1) + buttons(1) + seq(1) = 5B
 // Both fit the 250 bytes/msg cap with room to spare.
 #include <cmath>
@@ -16,7 +16,7 @@ namespace net {
   constexpr uint8_t TYPE_STATE = 0x02; // == msg_type::game_state, asserted in Protocol.h
   constexpr uint8_t TYPE_INPUT = 0x10; // == msg_type::player_input, asserted in Protocol.h
 
-  constexpr size_t STATE_LEN = 121;
+  constexpr size_t STATE_LEN = 123;
   constexpr size_t INPUT_LEN = 5;
   constexpr size_t MAX_MSG = 250;
 
@@ -33,11 +33,13 @@ namespace net {
   constexpr uint8_t BF_DMG_SHIFT = 1; // 5 bits: bullet dmg (bits 1..5, 6..7 reserved)
 
   constexpr uint8_t PF_ACTIVE = 0x01;
+  constexpr uint8_t PF_DOWNED = 0x02; // bleeding out, needs a revive
 
   struct __attribute__((packed)) net_player {
     uint16_t x, y; // world px * 4 (0.25px steps; 960*4 < 2^16)
     uint8_t hp;
-    uint8_t flags; // PF_ACTIVE
+    uint8_t flags; // PF_ACTIVE | PF_DOWNED
+    uint8_t bleed; // seconds left while downed
   };
 
   struct __attribute__((packed)) net_zombie {

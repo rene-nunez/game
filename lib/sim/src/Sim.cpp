@@ -10,6 +10,7 @@ sim::state sim::_s;
 uint32_t sim::_last_ms = 0;
 uint32_t sim::_last_shot[sim::NUM_PLAYERS] = {0, 0};
 uint32_t sim::_last_damage[sim::NUM_PLAYERS] = {0, 0};
+uint32_t sim::_bleed_acc[sim::NUM_PLAYERS] = {0, 0};
 int16_t sim::_path_tx[sim::NUM_PLAYERS] = {-1, -1};
 int16_t sim::_path_ty[sim::NUM_PLAYERS] = {-1, -1};
 sim::ctl sim::_p2ctl = {};
@@ -31,6 +32,7 @@ void sim::reset() {
   _s.last_event = event::none;
   _last_shot[0] = _last_shot[1] = 0;
   _last_damage[0] = _last_damage[1] = 0;
+  _bleed_acc[0] = _bleed_acc[1] = 0;
   _p2ctl = {};
 
   _s.players[0] = {
@@ -38,8 +40,10 @@ void sim::reset() {
       (float)tilemap::spawn_py - PLAYER_SIZE / 2.0f,
       PLAYER_HP_MAX,
       true,
+      false,
+      0,
   };
-  _s.players[1] = {_s.players[0].x, _s.players[0].y, 0, false}; // Solo: no peer yet
+  _s.players[1] = {_s.players[0].x, _s.players[0].y, 0, false, false, 0}; // Solo: no peer yet
 
   _path_tx[0] = _path_tx[1] = -1; // force fresh fields at the new spawn
   _path_ty[0] = _path_ty[1] = -1;
@@ -48,7 +52,24 @@ void sim::reset() {
 }
 
 bool sim::_alive(uint8_t p) {
-  return _s.players[p].active && _s.players[p].hp > 0;
+  return _s.players[p].active && !_s.players[p].downed && _s.players[p].hp > 0;
+}
+
+bool sim::_downed(uint8_t p) {
+  return _s.players[p].active && _s.players[p].downed;
+}
+
+bool sim::revive(uint8_t p) {
+  if (!_downed(p)) {
+    return false;
+  }
+  _s.players[p].downed = false;
+  _s.players[p].bleed = 0;
+  _s.players[p].hp = REVIVE_HP;
+  _bleed_acc[p] = 0;
+  _last_damage[p] = 0; // a breath before the next hit lands
+  _s.last_event = event::revive;
+  return true;
 }
 
 void sim::set_p2_active(bool active) {
@@ -70,6 +91,9 @@ void sim::_respawn(uint8_t p) {
   _s.players[p].x = (float)tilemap::spawn_px - PLAYER_SIZE / 2.0f + (float)(p * (PLAYER_SIZE + 2));
   _s.players[p].y = (float)tilemap::spawn_py - PLAYER_SIZE / 2.0f;
   _s.players[p].hp = PLAYER_HP_MAX;
+  _s.players[p].downed = false;
+  _s.players[p].bleed = 0;
+  _bleed_acc[p] = 0;
   _last_damage[p] = 0;
 }
 
@@ -165,8 +189,16 @@ void sim::_zombie_steer(uint8_t z, float pcx, float pcy, float dt,
 void sim::_spawn_wave() {
   ++_s.wave;
   for (uint8_t p = 0; p < NUM_PLAYERS; ++p) {
-    if (_s.players[p].active && _s.players[p].hp == 0) {
-      _respawn(p); // the fallen rejoin every wave
+    if (!_s.players[p].active || _s.players[p].hp > 0) {
+      continue;
+    }
+    if (_s.players[p].downed) {
+      _s.players[p].downed = false; // held on till the wave broke: up at revive HP
+      _s.players[p].bleed = 0;
+      _s.players[p].hp = REVIVE_HP;
+      _bleed_acc[p] = 0;
+    } else {
+      _respawn(p); // the bled-out rejoin every wave
     }
   }
   for (uint8_t i = 0; i < MAX_ZOMBIES; ++i) {
@@ -493,10 +525,27 @@ bool sim::step(uint32_t now) {
         if (_s.players[p].hp > dmg) {
           _s.players[p].hp = (uint8_t)(_s.players[p].hp - dmg);
         } else {
-          _s.players[p].hp = 0;
+          _s.players[p].hp = 0; // down, not out: bleed-out decides the rest
+          _s.players[p].downed = true;
+          _s.players[p].bleed = BLEED_SECS;
+          _bleed_acc[p] = 0;
         }
         _s.last_event = event::hurt;
       }
+    }
+  }
+
+  for (uint8_t p = 0; p < NUM_PLAYERS; ++p) {
+    if (!_downed(p)) {
+      continue;
+    }
+    _bleed_acc[p] += (uint32_t)(dt * 1000.0f);
+    while (_bleed_acc[p] >= 1000 && _s.players[p].bleed > 0) {
+      _bleed_acc[p] -= 1000;
+      --_s.players[p].bleed;
+    }
+    if (_s.players[p].bleed == 0) {
+      _s.players[p].downed = false; // bled out: dead until the next wave
     }
   }
 
@@ -617,7 +666,9 @@ void sim::snapshot(net::game_state_msg& n) {
     n.players[p].x = net::qpos(_s.players[p].x);
     n.players[p].y = net::qpos(_s.players[p].y);
     n.players[p].hp = _s.players[p].hp;
-    n.players[p].flags = _s.players[p].active ? net::PF_ACTIVE : 0;
+    n.players[p].flags = (_s.players[p].active ? net::PF_ACTIVE : 0) |
+                         (_s.players[p].downed ? net::PF_DOWNED : 0);
+    n.players[p].bleed = _s.players[p].bleed;
   }
   n.wave = _s.wave;
   n.kills = _s.kills;
@@ -648,6 +699,8 @@ void sim::apply_snapshot(const net::game_state_msg& n) {
     _s.players[p].y = net::uqpos(n.players[p].y);
     _s.players[p].hp = n.players[p].hp;
     _s.players[p].active = (n.players[p].flags & net::PF_ACTIVE) != 0;
+    _s.players[p].downed = (n.players[p].flags & net::PF_DOWNED) != 0;
+    _s.players[p].bleed = n.players[p].bleed;
   }
   _s.wave = n.wave;
   _s.kills = n.kills;

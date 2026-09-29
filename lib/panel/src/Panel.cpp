@@ -85,10 +85,22 @@ void panel::draw() {
   const int16_t tail_y = hp_y + (p2 ? 16 : 10);
 
   const uint16_t hp_col = (v.players[0].hp <= 2) ? colour::red : colour::green;
-  _pip_row(hp_y, "HP", v.players[0].hp, sim::PLAYER_HP_MAX, hp_col);
+  if (v.players[0].downed) {
+    display::fill_rect(0, hp_y, mx, 8, colour::black); // seconds shrink, clear first
+    snprintf(buf, sizeof(buf), "HP DOWN %u", v.players[0].bleed);
+    display::text(buf, 4, hp_y, colour::yellow, 1);
+  } else {
+    _pip_row(hp_y, "HP", v.players[0].hp, sim::PLAYER_HP_MAX, hp_col);
+  }
   if (p2) {
-    const uint16_t h2_col = (v.players[1].hp <= 2) ? colour::red : colour::cyan;
-    _pip_row(hp_y + 8, "H2", v.players[1].hp, sim::PLAYER_HP_MAX, h2_col);
+    if (v.players[1].downed) {
+      display::fill_rect(0, hp_y + 8, mx, 8, colour::black); // seconds shrink, clear first
+      snprintf(buf, sizeof(buf), "H2 DOWN %u", v.players[1].bleed);
+      display::text(buf, 4, hp_y + 8, colour::yellow, 1);
+    } else {
+      const uint16_t h2_col = (v.players[1].hp <= 2) ? colour::red : colour::cyan;
+      _pip_row(hp_y + 8, "H2", v.players[1].hp, sim::PLAYER_HP_MAX, h2_col);
+    }
   }
   _pip_row(tail_y, "DMG", v.dmg_lvl, sim::MAX_LVL, colour::red);
   _pip_row(tail_y + (p2 ? 8 : 10), "SPD", v.spd_lvl, sim::MAX_LVL,
@@ -179,9 +191,15 @@ void panel::blips() {
   _mm_frame();
 
   const sim::state& v = sim::view();
-  _mm_dot((int16_t)v.players[0].x, (int16_t)v.players[0].y, colour::white);
-  if (v.players[1].active) {
-    _mm_dot((int16_t)v.players[1].x, (int16_t)v.players[1].y, colour::cyan);
+  for (uint8_t p = 0; p < sim::NUM_PLAYERS; ++p) {
+    if (!v.players[p].active) {
+      continue;
+    }
+    uint16_t col = (p == 0) ? colour::white : colour::cyan;
+    if (v.players[p].downed) {
+      col = colour::yellow; // body to rescue
+    }
+    _mm_dot((int16_t)v.players[p].x, (int16_t)v.players[p].y, col);
   }
   for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
     if (v.zombies[i].active) {
