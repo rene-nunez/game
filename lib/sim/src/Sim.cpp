@@ -62,9 +62,10 @@ bool sim::_step_zombie(uint8_t z, float ddx, float ddy, float dt) {
   if (d <= 0.5f) {
     return false;
   }
+  const float spd = _zombie_speed(_s.zombies[z].kind);
   const float bx = _s.zombies[z].x, by = _s.zombies[z].y;
   // _move_entity takes references, so it has to get the real members, not copies
-  _move_entity(_s.zombies[z].x, _s.zombies[z].y, ddx / d * zombie_speed * dt, ddy / d * zombie_speed * dt,
+  _move_entity(_s.zombies[z].x, _s.zombies[z].y, ddx / d * spd * dt, ddy / d * spd * dt,
                ZOMBIE_SIZE);
   return _s.zombies[z].x != bx || _s.zombies[z].y != by;
 }
@@ -136,13 +137,20 @@ void sim::_spawn_wave() {
     _s.zombies[i].active = false;
   }
 
-  const uint8_t count = (_s.wave + 3u > MAX_ZOMBIES) ? MAX_ZOMBIES : (_s.wave + 3u);
+  const uint8_t count = _wave_total(_s.wave);
+  // composition: the boss steals slot 0 every 5th wave, then up to half the
+  // wave (from wave 2) are runners, the rest normals. 8 slots max, always.
+  const bool boss = _wave_boss(_s.wave);
+  const uint8_t runners = _wave_runners(_s.wave, count);
   const float px = _s.player.x + PLAYER_SIZE / 2.0f;
   const float py = _s.player.y + PLAYER_SIZE / 2.0f;
   const uint16_t total = (uint16_t)(tilemap::COLS * tilemap::ROWS);
   const int16_t off = (int16_t)((tilemap::TILE - ZOMBIE_SIZE) / 2);
 
   for (uint8_t i = 0; i < count; ++i) {
+    const actor_kind kind = (boss && i == 0) ? actor_kind::boss
+        : (i < (uint8_t)(runners + (boss ? 1u : 0u))) ? actor_kind::runner
+                                                     : actor_kind::normal;
     // scan every tile from a random offset, so a spot is always found
     const uint16_t start = (uint16_t)(esp_random() % total);
     for (uint16_t k = 0; k < total; ++k) {
@@ -159,15 +167,51 @@ void sim::_spawn_wave() {
       if (dx * dx + dy * dy < (float)spawn_min_d2 && k + 1 < total) {
         continue; // too close to the player, keep looking
       }
-      _s.zombies[i] = { x, y, _zombie_hp(_s.wave), true, actor_kind::normal };
+      _s.zombies[i] = { x, y, _zombie_hp(kind, _s.wave), true, kind };
       break;
     }
   }
   _s.last_event = event::wave;
 }
 
-uint8_t sim::_zombie_hp(uint8_t wave) {
-  return (uint8_t)(2u + (uint16_t)wave / 2u); // tougher every two waves
+uint8_t sim::_wave_total(uint8_t wave) {
+  const uint8_t total = (uint8_t)(wave + 3u);
+  return total > MAX_ZOMBIES ? MAX_ZOMBIES : total;
+}
+
+uint8_t sim::_wave_runners(uint8_t wave, uint8_t total) {
+  if (wave < 2) {
+    return 0; // gentle start: wave 1 is all normals
+  }
+  uint8_t runners = (uint8_t)(wave / 2u);
+  if (runners > total / 2u) {
+    runners = (uint8_t)(total / 2u);
+  }
+  return runners;
+}
+
+bool sim::_wave_boss(uint8_t wave) {
+  return wave % 5u == 0u;
+}
+
+uint8_t sim::_zombie_hp(actor_kind kind, uint8_t wave) {
+  switch (kind) {
+    case actor_kind::runner: return (uint8_t)(1u + (uint16_t)wave / 6u); // frail long, 2 hits from w6
+    case actor_kind::boss: return (uint8_t)(20u + wave); // 25 at w5, 30 at w10
+    default: return (uint8_t)(2u + (uint16_t)wave / 2u); // tougher every two waves
+  }
+}
+
+uint8_t sim::_zombie_dmg(actor_kind kind) {
+  return (kind == actor_kind::boss) ? 2 : 1; // the tank hits back, the rest scratch
+}
+
+float sim::_zombie_speed(actor_kind kind) {
+  switch (kind) {
+    case actor_kind::runner: return runner_speed;
+    case actor_kind::boss: return boss_speed;
+    default: return zombie_speed;
+  }
 }
 
 uint8_t sim::_eff_dmg(uint8_t base, uint8_t lvl) {
@@ -176,8 +220,12 @@ uint8_t sim::_eff_dmg(uint8_t base, uint8_t lvl) {
   return eff < 1 ? 1 : eff;
 }
 
-uint32_t sim::_kill_reward(uint8_t wave) {
-  return 10u + 2u * (uint32_t)wave; // base income with a mild wave slope
+uint32_t sim::_kill_reward(actor_kind kind, uint8_t wave) {
+  switch (kind) {
+    case actor_kind::runner: return runner_reward + 2u * (uint32_t)wave; // +5 over a normal
+    case actor_kind::boss: return 150u + 10u * (uint32_t)wave; // 200 at w5, 250 at w10
+    default: return 10u + 2u * (uint32_t)wave; // base income with a mild wave slope
+  }
 }
 
 float sim::_spd_mult(uint8_t lvl) {
@@ -322,7 +370,7 @@ bool sim::step(uint32_t now) {
           _s.zombies[z].hp = 0;
           _s.zombies[z].active = false;
           ++_s.kills;
-          _s.points += _kill_reward(_s.wave);
+          _s.points += _kill_reward(_s.zombies[z].kind, _s.wave);
         } else {
           _s.zombies[z].hp = (uint8_t)(_s.zombies[z].hp - dmg);
         }
@@ -354,10 +402,13 @@ bool sim::step(uint32_t now) {
     if (cdx * cdx + cdy * cdy <= contact_dist * contact_dist &&
         now - _last_damage >= damage_cd_ms) {
       _last_damage = now;
-      if (_s.player_hp > 0) {
-        --_s.player_hp;
-        _s.last_event = event::hurt;
+      const uint8_t dmg = _zombie_dmg(_s.zombies[z].kind);
+      if (_s.player_hp > dmg) {
+        _s.player_hp = (uint8_t)(_s.player_hp - dmg);
+      } else {
+        _s.player_hp = 0;
       }
+      _s.last_event = event::hurt;
     }
   }
 

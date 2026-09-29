@@ -173,7 +173,13 @@ void panel::blips() {
   _mm_dot((int16_t)v.player.x, (int16_t)v.player.y, colour::white);
   for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
     if (v.zombies[i].active) {
-      _mm_dot((int16_t)v.zombies[i].x, (int16_t)v.zombies[i].y, colour::red);
+      uint16_t col = colour::red;
+      if (v.zombies[i].kind == sim::actor_kind::runner) {
+        col = colour::orange;
+      } else if (v.zombies[i].kind == sim::actor_kind::boss) {
+        col = colour::purple;
+      }
+      _mm_dot((int16_t)v.zombies[i].x, (int16_t)v.zombies[i].y, col);
     }
   }
 }
