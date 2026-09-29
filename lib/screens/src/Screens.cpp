@@ -38,10 +38,11 @@ namespace {
     {"GAME MODE", _mode_items, 3, false},  // mode
     {"POINTS", nullptr, 0, false},         // points
     {nullptr, nullptr, 0, false},          // playing
-    {"PAUSED", _pause_items, 3, false},    // pause
+    {"PAUSED", _pause_items, 3, false},  // pause
     {"GAME OVER", _over_items, 2, true},   // game over
+    {"WAITING", nullptr, 0, false},        // waiting (custom peer text, no items)
   };
-  static_assert(sizeof(_tables) / sizeof(_tables[0]) == 8, "one row per screens::id");
+  static_assert(sizeof(_tables) / sizeof(_tables[0]) == 9, "one row per screens::id");
 
   const _list& _table(screens::id scr) {
     return _tables[(uint8_t)scr];
@@ -124,6 +125,12 @@ namespace {
     display::text("FIRE/PAUSE: back", 16, 200, colour::white, 1);
   }
 
+  void _full_waiting() {
+    _background("WAITING", colour::cyan);
+    display::text("for peer ...", 16, 100, colour::white, 1);
+    display::text("FIRE: solo   PAUSE: back", 16, 160, colour::white, 1);
+  }
+
   void _full_game_over(uint8_t sel) {
     _background("GAME OVER", colour::red);
 
@@ -165,6 +172,7 @@ void screens::paint(id scr, uint8_t sel) {
       case id::team: _full_team(); break;
       case id::points: _full_points(); break;
       case id::game_over: _full_game_over(sel); break;
+      case id::waiting: _full_waiting(); break;
       default: _full_menu(t, sel); break;
     }
     _painted_scr = (uint8_t)scr;

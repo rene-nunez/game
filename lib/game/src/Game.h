@@ -4,6 +4,7 @@
 
 #include <Handler.h>
 #include <Input.h>
+#include <NetState.h>
 #include <Screens.h>
 
 #include <Sim.h>
@@ -17,6 +18,10 @@ class game {
     static constexpr uint32_t _frame_ms = 33; // ~30 fps
     static constexpr int16_t _shop_r = 40;    // INTERACT reach, px from a machine centre
     static constexpr uint32_t _intro_ms = 2500; // logo and team screens duration, FIRE skips
+    static constexpr uint32_t _wait_ms = 10000; // multiplayer peer wait, then back to mode
+    static constexpr uint32_t _wait_hb_ms = 200; // heartbeat pace while waiting
+    static constexpr uint32_t _in_stale_ms = 300; // peer input older than this goes neutral
+    static constexpr uint32_t _cli_quiet_ms = 3000; // no snapshot for this long: back to menu
 
     static uint32_t _last_frame_ms;
     static uint32_t _intro_ms0; // millis() at logo/team entry, anchors the intro timers
@@ -28,24 +33,45 @@ class game {
     static uint32_t _tick;
     static uint32_t _peer_tick;
 
+    // F6 co-op net state. Host simulates both players and broadcasts snapshots;
+    // the client sends inputs and applies snapshots. Solo never touches the air.
+    static bool _net_multi;        // this run is co-op
+    static uint32_t _wait_since;   // waiting entry, millis()
+    static uint32_t _wait_last_hb; // last waiting heartbeat, millis()
+    static bool _peer_seen;        // peer showed up while waiting
+    static uint16_t _seq_out;      // snapshot/input sequence, host and client each own theirs
+    static uint8_t _in_seq;        // last peer input seq applied (host)
+    static uint8_t _in_buttons;    // latest peer button levels (host)
+    static uint8_t _in_prev;       // previous peer buttons, for edges (host)
+    static float _in_jx, _in_jy;   // latest peer axes (host)
+    static uint32_t _in_last_ms;   // last peer input rx time (host, stale check)
+    static volatile bool _rx_ready; // snapshot waiting to apply (client)
+    static net::game_state_msg _rx_state; // snapshot buffer (client)
+    static net::game_state_msg _tx_state; // snapshot scratch (host)
+    static uint32_t _cli_last_rx; // last snapshot applied (client, quiet check)
+
     static int16_t _shop_hx, _shop_hy; // heal vending centre, world px (-1 = missing)
     static int16_t _shop_dx, _shop_dy; // damage vending centre
     static int16_t _shop_sx, _shop_sy; // speed vending centre
     static int16_t _shop_rx, _shop_ry; // roulette centre
     static char _hint_buf[28];         // transient result text ("NEED 100", "GUN: SMG")
     static uint32_t _hint_until;       // result visible while millis() < this
-    static bool _p2_interact;          // player 2 INTERACT edge, set from net (F6), consumed in shop
+    static bool _p2_interact;          // player 2 INTERACT edge, set from net, consumed in shop
+    static bool _p2_pause_edge;        // player 2 PAUSE edge, set from net, consumed in game
 
     static void _on_heartbeat(const uint8_t* data, size_t len);
+    static void _on_state(const uint8_t* data, size_t len); // snapshot rx (client)
+    static void _on_input(const uint8_t* data, size_t len); // input rx (host)
 
     static int8_t _nav_edge();
     static void _nav_step(); // nav edge + wrap, using the screen's own item count
     static void _sleep();
     static screens::id _scr;
 
-    static void _start_game();
+    static void _start_game(bool multi);
     static void _enter_menu();
     static void _enter_game_over();
+    static void _broadcast(); // snapshot the sim and send it (host, multi only)
 
     static void _scan_shops();       // cache the 2x2 machine centres, once per run
     static void _shop_update(uint32_t now); // INTERACT buys + panel prompt, after sim::step
@@ -55,8 +81,11 @@ class game {
     static void _update_mode();
     static void _update_points();
     static void _update_playing();
+    static void _update_playing_host();   // host sim + broadcast (solo: sim only)
+    static void _update_playing_client(); // input tx + snapshot apply + draw
     static void _update_pause();
     static void _update_game_over();
     static void _update_logo();
     static void _update_team();
+    static void _update_waiting();
 };

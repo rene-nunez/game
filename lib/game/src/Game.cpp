@@ -21,6 +21,22 @@ handler game::_handler;
 uint32_t game::_tick = 0;
 uint32_t game::_peer_tick = 0;
 
+bool game::_net_multi = false;
+uint32_t game::_wait_since = 0;
+uint32_t game::_wait_last_hb = 0;
+bool game::_peer_seen = false;
+uint16_t game::_seq_out = 0;
+uint8_t game::_in_seq = 0;
+uint8_t game::_in_buttons = 0;
+uint8_t game::_in_prev = 0;
+float game::_in_jx = 0.0f;
+float game::_in_jy = 0.0f;
+uint32_t game::_in_last_ms = 0;
+volatile bool game::_rx_ready = false;
+net::game_state_msg game::_rx_state;
+net::game_state_msg game::_tx_state;
+uint32_t game::_cli_last_rx = 0;
+
 int16_t game::_shop_hx = -1;
 int16_t game::_shop_hy = -1;
 int16_t game::_shop_dx = -1;
@@ -32,6 +48,7 @@ int16_t game::_shop_ry = -1;
 char game::_hint_buf[28] = {0};
 uint32_t game::_hint_until = 0;
 bool game::_p2_interact = false;
+bool game::_p2_pause_edge = false;
 
 uint32_t game::_last_frame_ms = 0;
 uint32_t game::_intro_ms0 = 0;
@@ -52,6 +69,8 @@ bool game::begin(uint8_t role) {
   }
 
   _handler.on_message(msg_type::heartbeat, _on_heartbeat);
+  _handler.on_message(msg_type::game_state, _on_state);
+  _handler.on_message(msg_type::player_input, _on_input);
 
   if (!display::begin()) {
     Serial.println("[game] display init failed, resetting...");
@@ -100,6 +119,7 @@ void game::update() {
     case screens::id::playing: _update_playing(); break;
     case screens::id::pause: _update_pause(); break;
     case screens::id::game_over: _update_game_over(); break;
+    case screens::id::waiting: _update_waiting(); break;
   }
 
   // target-paced: a heavy frame pushes the next one out, it never catches up
@@ -118,7 +138,35 @@ void game::_on_heartbeat(const uint8_t* data, size_t len) {
   heartbeat_msg hb;
   memcpy(&hb, data, sizeof(hb));
   _peer_tick = hb.tick;
-  Serial.printf("[game] heartbeat from peer: tick=%lu role=%u\n", hb.tick, hb.role);
+  _peer_seen = true; // any peer heartbeat counts while waiting (consumed there)
+}
+
+void game::_on_state(const uint8_t* data, size_t len) {
+  if (_handler.role() != ROLE_CLIENT) {
+    return; // host never applies snapshots
+  }
+  if (len < sizeof(net::game_state_msg)) {
+    return;
+  }
+  memcpy(&_rx_state, data, sizeof(net::game_state_msg));
+  _rx_ready = true;
+  _peer_seen = true; // snapshots also join a waiting client, enabling late join
+}
+
+void game::_on_input(const uint8_t* data, size_t len) {
+  if (_handler.role() != ROLE_HOST) {
+    return; // client never applies inputs
+  }
+  if (len < sizeof(net::player_input_msg)) {
+    return;
+  }
+  net::player_input_msg in;
+  memcpy(&in, data, sizeof(in));
+  _in_jx = net::uqaxis(in.jx);
+  _in_jy = net::uqaxis(in.jy);
+  _in_buttons = in.buttons;
+  _in_seq = in.seq;
+  _in_last_ms = millis();
 }
 
 int8_t game::_nav_edge() {
@@ -128,8 +176,17 @@ int8_t game::_nav_edge() {
   return edge;
 }
 
-void game::_start_game() {
+void game::_start_game(bool multi) {
+  _net_multi = multi;
+  _seq_out = 0;
+  _in_buttons = _in_prev = 0;
+  _in_jx = _in_jy = 0.0f;
+  _rx_ready = false;
+  _p2_interact = _p2_pause_edge = false;
   sim::reset();
+  if (multi && _handler.role() == ROLE_HOST) {
+    sim::set_p2_active(true); // the client never steps, it follows snapshots
+  }
   _scan_shops();
   _hint_until = 0;
   _hint_buf[0] = '\0';
@@ -148,9 +205,19 @@ void game::_enter_menu() {
 
 void game::_enter_game_over() {
   const sim::state& v = sim::view();
-  points::add_run(v.kills, v.points, v.wave); // best is the wallet at death: earned minus spent
+  // the host owns the wallet and the SD card; a client only mirrors the screen
+  if (!_net_multi || _handler.role() == ROLE_HOST) {
+    points::add_run(v.kills, v.points, v.wave); // best is the wallet at death: earned minus spent
+  }
   _scr = screens::id::game_over;
   _sel = 0;
+}
+
+void game::_broadcast() {
+  _tx_state.type = net::TYPE_STATE;
+  _tx_state.seq = _seq_out++;
+  sim::snapshot(_tx_state);
+  _handler.send(&_tx_state, sizeof(_tx_state));
 }
 
 void game::_scan_shops() {
@@ -416,9 +483,53 @@ void game::_update_mode() {
     buzz::play(buzz::jingle::menu);
     if (_sel == 2) { // Back
       _enter_menu();
+    } else if (_sel == 0) {
+      _start_game(false); // Solo: local run, the radio stays silent
     } else {
-      _start_game(); // Solo / Multiplayer (net-handshake comes in P3)
+      _scr = screens::id::waiting; // Multiplayer: wait for the peer
+      _sel = 0;
+      _wait_since = millis();
+      _wait_last_hb = 0;
+      _peer_seen = false;
+      _rx_ready = false;
     }
+  }
+  screens::paint(_scr, _sel);
+}
+
+void game::_update_waiting() {
+  const uint32_t now = millis();
+  if (now - _wait_last_hb >= _wait_hb_ms) {
+    heartbeat_msg hb;
+    hb.tick = _tick++;
+    hb.role = _handler.role();
+    _handler.send(&hb, sizeof(hb));
+    _wait_last_hb = now;
+  }
+  if (input::pause_pressed()) {
+    _enter_menu(); // bail out
+    return;
+  }
+  if (input::fire_pressed()) {
+    buzz::play(buzz::jingle::menu);
+    _start_game(false); // tired of waiting: play solo
+    return;
+  }
+  if (_peer_seen) {
+    _peer_seen = false;
+    buzz::play(buzz::jingle::wave);
+    _start_game(true); // peer showed up (a client also joins mid-run off snapshots)
+    if (_handler.role() == ROLE_CLIENT && _rx_ready) {
+      sim::apply_snapshot(_rx_state); // start from the live frame, not the reset one
+      _rx_ready = false;
+      _cli_last_rx = millis();
+    }
+    return;
+  }
+  if (now - _wait_since >= _wait_ms) {
+    buzz::play(buzz::jingle::denied); // nobody out there
+    _enter_menu();
+    return;
   }
   screens::paint(_scr, _sel);
 }
@@ -434,23 +545,46 @@ void game::_update_points() {
 }
 
 void game::_update_playing() {
-  heartbeat_msg hb;
-  hb.tick = _tick++;
-  hb.role = _handler.role();
-  _handler.send(&hb, sizeof(hb));
+  if (_handler.role() == ROLE_CLIENT) {
+    _update_playing_client();
+    return;
+  }
+  _update_playing_host();
+}
 
-  if (input::pause_pressed()) {
+void game::_update_playing_host() {
+  // fold the latest peer input into player 2 (edges from levels, neutral when stale)
+  const uint32_t now = millis();
+  sim::ctl c = {};
+  if (_net_multi && now - _in_last_ms < _in_stale_ms) {
+    c.jx = _in_jx;
+    c.jy = _in_jy;
+    c.fire = (_in_buttons & net::fire_bit) && !(_in_prev & net::fire_bit);
+    _p2_interact = (_in_buttons & net::interact_bit) && !(_in_prev & net::interact_bit);
+    _p2_pause_edge = (_in_buttons & net::pause_bit) && !(_in_prev & net::pause_bit);
+    _in_prev = _in_buttons;
+  } else {
+    _in_prev = _in_buttons; // stale: hold levels so the next packet re-edges cleanly
+  }
+  c.pause = false; // pause travels via _p2_pause_edge, sim never sees it
+  sim::set_p2(c);
+
+  if (input::pause_pressed() || _p2_pause_edge) {
+    _p2_pause_edge = false;
     _scr = screens::id::pause;
     _sel = 0;
     return;
   }
+  _p2_pause_edge = false;
 
   // the order matters: the clear-before-sim is what erases entities that die mid-frame
   render::clear();
-  const uint32_t now = millis();
   if (!sim::step(now)) {
     buzz::play(buzz::jingle::over); // death jingle, then the screen change below
     _enter_game_over(); // sim reports the death, the screen change belongs here
+    if (_net_multi) {
+      _broadcast(); // the client mirrors game over off the over event
+    }
     return;
   }
   _shop_update(now); // INTERACT buys + prompt, before the panel paints it
@@ -460,13 +594,54 @@ void game::_update_playing() {
   panel::draw();
   panel::blips();
   // the role badge is net state, not sim state, so it does not belong to the renderer
-  display::text(_handler.role() == ROLE_HOST ? "HOST" : "CLIENT", (int16_t)(display::width() - 34), 1,
-                colour::cyan, 1);
+  display::text(_net_multi ? "HOST" : "SOLO", (int16_t)(display::width() - 34), 1, colour::cyan,
+                1);
+  if (_net_multi) {
+    _broadcast(); // ~30Hz state to the client, right after the frame simmed
+  }
+}
+
+void game::_update_playing_client() {
+  // ship our sticks and buttons every frame; the host owns the sim
+  net::player_input_msg in;
+  in.jx = net::qaxis(input::jx());
+  in.jy = net::qaxis(input::jy());
+  in.buttons = (input::fire_down() ? net::fire_bit : 0) |
+               (input::reload_down() ? net::reload_bit : 0) |
+               (input::interact_down() ? net::interact_bit : 0) |
+               (input::pause_down() ? net::pause_bit : 0);
+  in.seq = (uint8_t)_seq_out++;
+  _handler.send(&in, sizeof(in));
+
+  // erase at the old frame, then step to the new one: same order as the host
+  render::clear();
+  if (_rx_ready) {
+    sim::apply_snapshot(_rx_state);
+    _rx_ready = false;
+    _cli_last_rx = millis();
+  }
+  if (millis() - _cli_last_rx >= _cli_quiet_ms) {
+    buzz::play(buzz::jingle::denied); // host went away (menu/sleep): drop to menu
+    _net_multi = false;
+    _enter_menu();
+    return;
+  }
+  if (sim::view().last_event == sim::event::over) {
+    _enter_game_over(); // host declared it, we only mirror (no SD write, see guard)
+    return;
+  }
+  _fire_buzz(); // the snapshot carries the event, so both buzzers sing
+  render::update_camera();
+  render::draw();
+  panel::draw();
+  panel::blips();
+  display::text("P2", (int16_t)(display::width() - 34), 1, colour::cyan, 1);
 }
 
 void game::_update_pause() {
   _nav_step();
-  if (input::pause_pressed()) {
+  if (input::pause_pressed() || _p2_pause_edge) {
+    _p2_pause_edge = false;
     _scr = screens::id::playing;
     screens::invalidate(); // the next pause must repaint its chrome
     panel::init(); // the pause menu covered the panel and the minimap
@@ -481,7 +656,7 @@ void game::_update_pause() {
         render::repaint(); // clear leftover pause menu
         break;
       case 1: // Restart
-        _start_game();
+        _start_game(_net_multi); // a co-op pause restarts co-op
         break;
       default: // Exit to Menu
         _enter_menu();
@@ -489,17 +664,49 @@ void game::_update_pause() {
     }
   }
   screens::paint(_scr, _sel);
+  if (_net_multi && _handler.role() == ROLE_HOST) {
+    _broadcast(); // frozen sim keeps flowing so the client holds the frame
+  }
 }
 
 void game::_update_game_over() {
   _nav_step();
+  if (_handler.role() == ROLE_CLIENT) {
+    // mirror only: the host owns restart, we follow its snapshots back to playing
+    if (_rx_ready) {
+      sim::apply_snapshot(_rx_state);
+      _rx_ready = false;
+      _cli_last_rx = millis();
+      bool anyone = false;
+      for (uint8_t p = 0; p < sim::NUM_PLAYERS; ++p) {
+        anyone |= sim::view().players[p].active && sim::view().players[p].hp > 0;
+      }
+      if (anyone) {
+        _start_game(true); // host restarted: re-init chrome, snapshots fill the sim
+        return;
+      }
+    }
+    if (input::fire_pressed()) {
+      buzz::play(buzz::jingle::menu); // feedback only, the host drives restart
+    }
+    if (millis() - _cli_last_rx >= _cli_quiet_ms) {
+      _net_multi = false;
+      _enter_menu(); // host left: drop to menu
+      return;
+    }
+    screens::paint(_scr, _sel);
+    return;
+  }
   if (input::fire_pressed()) {
     buzz::play(buzz::jingle::menu);
     if (_sel == 0) {
-      _start_game();
+      _start_game(_net_multi);
     } else {
       _enter_menu();
     }
   }
   screens::paint(_scr, _sel);
+  if (_net_multi) {
+    _broadcast(); // the over event keeps flowing until the host restarts or exits
+  }
 }
