@@ -5,6 +5,7 @@
 #include <esp_sleep.h>
 #include <esp_system.h>
 
+#include <Buzz.h>
 #include <Display.h>
 #include <map.h>
 #include <Panel.h>
@@ -69,6 +70,10 @@ bool game::begin(uint8_t role) {
 
   points::load();
 
+  if (!buzz::begin()) {
+    Serial.println("[game] buzz init failed, silent mode");
+  }
+
   _scr = screens::id::logo;
   _sel = 0;
   _nav_dir = 0;
@@ -83,6 +88,7 @@ bool game::begin(uint8_t role) {
 
 void game::update() {
   input::update();
+  buzz::update(millis()); // the note sequencer runs on every screen
 
   switch (_scr) {
     case screens::id::logo: _update_logo(); break;
@@ -275,6 +281,7 @@ void game::_shop_update(uint32_t now) {
 }
 
 void game::_sleep() {
+  buzz::stop();
   display::backlight(false);
 
   rtc_gpio_pullup_en((gpio_num_t)BTN_PAUSE);
@@ -292,6 +299,23 @@ void game::_nav_step() {
   const uint8_t n = screens::count(_scr);
   if (e && n > 0) {
     _sel = (uint8_t)((_sel + n + e) % n);
+    buzz::play(buzz::jingle::menu); // cursor tick on every menu move
+  }
+}
+
+// one jingle per sim event, fired after step()+shop so buys win over same-frame shots
+void game::_fire_buzz() {
+  switch (sim::view().last_event) {
+    case sim::event::shoot: buzz::play(buzz::jingle::shoot); break;
+    case sim::event::buy_heal:
+    case sim::event::buy_dmg:
+    case sim::event::buy_spd: buzz::play(buzz::jingle::buy); break;
+    case sim::event::roulette: buzz::play(buzz::jingle::roulette); break;
+    case sim::event::denied: buzz::play(buzz::jingle::denied); break;
+    case sim::event::hurt: buzz::play(buzz::jingle::hurt); break;
+    case sim::event::wave: buzz::play(buzz::jingle::wave); break;
+    case sim::event::over: buzz::play(buzz::jingle::over); break;
+    default: break; // none: silence
   }
 }
 
@@ -314,6 +338,7 @@ void game::_update_team() {
 void game::_update_menu() {
   _nav_step();
   if (input::fire_pressed()) {
+    buzz::play(buzz::jingle::menu); // confirm blip (inaudible on Exit, it sleeps)
     switch (_sel) {
       case 0:
         _scr = screens::id::mode;
@@ -334,6 +359,7 @@ void game::_update_menu() {
 void game::_update_mode() {
   _nav_step();
   if (input::fire_pressed()) {
+    buzz::play(buzz::jingle::menu);
     if (_sel == 2) { // Back
       _enter_menu();
     } else {
@@ -345,6 +371,9 @@ void game::_update_mode() {
 
 void game::_update_points() {
   if (input::fire_pressed() || input::pause_pressed()) {
+    if (input::fire_pressed()) {
+      buzz::play(buzz::jingle::menu);
+    }
     _enter_menu();
   }
   screens::paint(_scr, _sel);
@@ -366,10 +395,12 @@ void game::_update_playing() {
   render::clear();
   const uint32_t now = millis();
   if (!sim::step(now)) {
+    buzz::play(buzz::jingle::over); // death jingle, then the screen change below
     _enter_game_over(); // sim reports the death, the screen change belongs here
     return;
   }
   _shop_update(now); // INTERACT buys + prompt, before the panel paints it
+  _fire_buzz(); // jingle for the frame's event (buys already overwrote shots)
   render::update_camera();
   render::draw();
   panel::draw();
@@ -387,6 +418,7 @@ void game::_update_pause() {
     panel::init(); // the pause menu covered the panel and the minimap
     render::repaint(); // clear leftover pause menu
   } else if (input::fire_pressed()) {
+    buzz::play(buzz::jingle::menu);
     switch (_sel) {
       case 0: // Continue
         _scr = screens::id::playing;
@@ -408,6 +440,7 @@ void game::_update_pause() {
 void game::_update_game_over() {
   _nav_step();
   if (input::fire_pressed()) {
+    buzz::play(buzz::jingle::menu);
     if (_sel == 0) {
       _start_game();
     } else {

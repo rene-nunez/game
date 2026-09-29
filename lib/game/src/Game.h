@@ -48,6 +48,7 @@ class game {
 
     static void _scan_shops();       // cache the 2x2 machine centres, once per run
     static void _shop_update(uint32_t now); // INTERACT buys + panel prompt, after sim::step
+    static void _fire_buzz(); // one jingle per sim::last_event, after step()+shop
 
     static void _update_menu();
     static void _update_mode();
