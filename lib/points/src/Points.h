@@ -2,10 +2,10 @@
 
 #include <cstdint>
 
-// Best points and lifetime kills, in RTC memory so they survive a deep sleep. This is also
-// the seam the microSD persistence of P4 slots behind: only the storage inside Points.cpp
-// changes, the calls below do not. Best is the wallet at death: earned points minus
-// everything spent in the shops.
+// Best points and lifetime kills, in RTC memory so they survive a deep sleep, mirrored
+// to /z32.json on the microSD (same TFT SPI bus, CS 22) so they survive a power loss.
+// Only the storage inside Points.cpp changes, the calls below do not. Best is the
+// wallet at death: earned points minus everything spent in the shops.
 class points {
   public:
     static void load(); // boot, magic guarded
