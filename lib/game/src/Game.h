@@ -16,8 +16,10 @@ class game {
   private:
     static constexpr uint32_t _frame_ms = 33; // ~30 fps
     static constexpr int16_t _shop_r = 40;    // INTERACT reach, px from a machine centre
+    static constexpr uint32_t _intro_ms = 2500; // logo and team screens duration, FIRE skips
 
     static uint32_t _last_frame_ms;
+    static uint32_t _intro_ms0; // millis() at logo/team entry, anchors the intro timers
 
     static uint8_t _sel;
     static int8_t _nav_dir;
@@ -53,4 +55,6 @@ class game {
     static void _update_playing();
     static void _update_pause();
     static void _update_game_over();
+    static void _update_logo();
+    static void _update_team();
 };

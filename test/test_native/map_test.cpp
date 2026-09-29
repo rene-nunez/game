@@ -66,11 +66,12 @@ int main() {
   {
     const int ROW = 16, GLYPH = 8, FOOT_GAP = 24;
     struct Screen { int y0, count, above, last; const char* label; };
-    const Screen screens[2] = {
+    const Screen screens[3] = {
         {56, 3, 24 + 2 * GLYPH, 88, "menu/mode/pause"},
         {110, 2, 76 + GLYPH, 126, "game over"},
+        {56, 5, 24 + 2 * GLYPH, 120, "team"},
     };
-    for (int s = 0; s < 2; ++s) {
+    for (int s = 0; s < 3; ++s) {
       const Screen& sc = screens[s];
       const int foot = sc.y0 + sc.count * ROW + FOOT_GAP;
       check(sc.y0 + (sc.count - 1) * ROW == sc.last, "menu row pitch misses the last row");

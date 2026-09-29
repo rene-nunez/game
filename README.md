@@ -1,4 +1,4 @@
-# Z32 — Survive the Mall
+# z32 — Survive the Mall
 
 Juego estilo COD Zombies para ESP32 con pantalla TFT de 2.4" (320x240). Sobrevive oleadas de
 zombis en un laberinto, gana puntos por cada baja y gástalos en máquinas expendedoras para

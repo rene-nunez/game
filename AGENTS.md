@@ -68,7 +68,7 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 ## Roadmap
 
 - **F1 shop+roulette** ✅ done: `sim::state` += `weapon/dmg_lvl/spd_lvl/points/last_event` (+`actor.kind`); `game` proximity+buy; `panel` pips+`GUN`; verify exact-points buys, levels, wallet-best on glass
-- **F2 Z32+intro+screens**: `ZOMBIES`→`Z32` strings + README (repo path unchanged); `screens::id` += `logo` (centered, timed/skippable) → `team` (names TBD by user) → `menu`
+- **F2 Z32+intro+screens** ✅ done: `z32` title strings (repo path unchanged); `screens::id` += `logo` → `team` (both centred chrome, 2.5s timed/FIRE-skippable; team lists 5 ASCII names) → `menu`
 - **F3 buzzer**: `lib/buzz` on GPIO 26, jingles menu/shoot/buy/roulette/hurt/wave/game-over, fired from `last_event`
 - **F4 runners+boss**: kinds, waves, colours, cap-8 slots; balance on glass
 - **F5 microSD**: share TFT SPI + CS22; `Points.cpp` → JSON `{best,total_kills}` (best = wallet at death); same 4 functions; needs hardware

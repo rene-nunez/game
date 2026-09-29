@@ -32,8 +32,9 @@ char game::_hint_buf[28] = {0};
 uint32_t game::_hint_until = 0;
 
 uint32_t game::_last_frame_ms = 0;
+uint32_t game::_intro_ms0 = 0;
 
-screens::id game::_scr = screens::id::menu;
+screens::id game::_scr = screens::id::logo;
 uint8_t game::_sel = 0;
 int8_t game::_nav_dir = 0;
 
@@ -68,10 +69,11 @@ bool game::begin(uint8_t role) {
 
   points::load();
 
-  _scr = screens::id::menu;
+  _scr = screens::id::logo;
   _sel = 0;
   _nav_dir = 0;
-  _last_frame_ms = millis();
+  _intro_ms0 = millis();
+  _last_frame_ms = _intro_ms0;
 
   screens::paint(_scr, _sel);
 
@@ -83,6 +85,8 @@ void game::update() {
   input::update();
 
   switch (_scr) {
+    case screens::id::logo: _update_logo(); break;
+    case screens::id::team: _update_team(); break;
     case screens::id::menu: _update_menu(); break;
     case screens::id::mode: _update_mode(); break;
     case screens::id::points: _update_points(); break;
@@ -289,6 +293,22 @@ void game::_nav_step() {
   if (e && n > 0) {
     _sel = (uint8_t)((_sel + n + e) % n);
   }
+}
+
+void game::_update_logo() {
+  if (input::fire_pressed() || millis() - _intro_ms0 >= _intro_ms) {
+    _scr = screens::id::team; // timed or skippable, then the team screen
+    _sel = 0;
+    _intro_ms0 = millis();
+  }
+  screens::paint(_scr, _sel);
+}
+
+void game::_update_team() {
+  if (input::fire_pressed() || input::pause_pressed() || millis() - _intro_ms0 >= _intro_ms) {
+    _enter_menu(); // timed like the logo, FIRE/PAUSE skip it
+  }
+  screens::paint(_scr, _sel);
 }
 
 void game::_update_menu() {
