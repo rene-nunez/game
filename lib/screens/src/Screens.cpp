@@ -13,7 +13,7 @@ namespace {
   // The chrome sits centred: title at 64, first row at 96 on the 240px glass. Items are
   // size 2 (12x16 glyphs, 24px pitch); hints stay size 1.
   constexpr int16_t _menu_x = 16, _menu_y = 96, _menu_row = 24;
-  constexpr int16_t _over_x = 24, _over_y = 142; // the game over screen is indented
+  constexpr int16_t _over_x = 24, _over_y = 120; // the game over screen is indented
 
   const char* const _menu_items[] = { "Start Game", "Points", "Exit" };
   const char* const _mode_items[] = { "Solo", "Multiplayer", "Back" };
@@ -30,19 +30,20 @@ namespace {
     uint8_t count;
     bool indented; // game over sits further right
     uint16_t title_col; // screen identity in the zombie palette
+    const char* hint; // bottom-anchored footer verbs, null when the screen has none
   };
 
   // indexed by screens::id, so the order here is the enum order
   const _list _tables[] = {
-    {"z32", nullptr, 0, false, colour::red},            // logo (custom big paint, no items)
-    {"TEAM", nullptr, 0, false, colour::lime},          // team (custom name list, no items)
-    {"z32", _menu_items, 3, false, colour::lime},       // menu
-    {"GAME MODE", _mode_items, 3, false, colour::lime}, // mode
-    {"POINTS", nullptr, 0, false, colour::lime},        // points
-    {nullptr, nullptr, 0, false, colour::black},        // playing
-    {"PAUSED", _pause_items, 3, false, colour::lime},  // pause
-    {"GAME OVER", _over_items, 2, true, colour::red},   // game over
-    {"WAITING", nullptr, 0, false, colour::lime},       // waiting (custom peer text, no items)
+    {"z32", nullptr, 0, false, colour::red, nullptr},  // logo (custom big paint, no items)
+    {"TEAM", nullptr, 0, false, colour::lime, nullptr}, // team (custom name list, no items)
+    {"z32", _menu_items, 3, false, colour::lime, "JOY: move   FIRE: select"}, // menu
+    {"GAME MODE", _mode_items, 3, false, colour::lime, "JOY: move   FIRE: select"}, // mode
+    {"POINTS", nullptr, 0, false, colour::lime, nullptr}, // points
+    {nullptr, nullptr, 0, false, colour::black, nullptr}, // playing
+    {"PAUSED", _pause_items, 3, false, colour::lime, "JOY: move   FIRE: select   PAUSE: resume"}, // pause
+    {"GAME OVER", _over_items, 2, true, colour::red, "JOY: move   FIRE: select"}, // game over
+    {"WAITING", nullptr, 0, false, colour::lime, nullptr}, // waiting (custom peer text, no items)
   };
   static_assert(sizeof(_tables) / sizeof(_tables[0]) == 9, "one row per screens::id");
 
@@ -76,8 +77,9 @@ namespace {
     for (uint8_t i = 0; i < t.count; ++i) {
       _item(t.items, i, i == sel, _row_x(t), _row_y0(t) + (int16_t)i * _menu_row);
     }
-    display::text("JOY: move   FIRE: select", _row_x(t), _row_y0(t) + (int16_t)t.count * _menu_row + 16,
-                  colour::gray, 1);
+    // footer pinned to the glass bottom (not glued to the list), points-style verbs;
+    // always at the menu x so every screen lines its hint up the same way
+    display::text(t.hint, _menu_x, 224, colour::gray, 1);
   }
 
   void _full_menu(const _list& t, uint8_t sel) {
@@ -113,21 +115,17 @@ namespace {
     _background("POINTS", colour::lime);
 
     char buf[32];
-    snprintf(buf, sizeof(buf), "Best: %lu", points::best());
-    display::text(buf, 16, 90, colour::yellow, 2);
-    snprintf(buf, sizeof(buf), "Kills: %lu", points::total_kills());
-    display::text(buf, 16, 110, colour::white, 2);
 
     // last-4 runs, recent first, ranked gold/silver/bronze/gray
     static const uint16_t rank_col[] = {colour::yellow, colour::white, colour::orange, colour::gray};
     const uint8_t n = points::history_len();
     const points::run* h = points::history();
     if (n == 0) {
-      display::text("no runs yet", 16, 132, colour::gray, 2);
+      display::text("no runs yet", 16, 96, colour::gray, 2);
     }
     for (uint8_t i = 0; i < n && i < points::HISTORY_N; ++i) {
       snprintf(buf, sizeof(buf), "R%u P%lu K%lu W%u", i + 1, h[i].pts, h[i].kills, h[i].wave);
-      display::text(buf, 16, (int16_t)(132 + i * 24), rank_col[i], 2);
+      display::text(buf, 16, (int16_t)(96 + i * 24), rank_col[i], 2);
     }
 
     display::text("FIRE/PAUSE: back", 16, 224, colour::gray, 1);
@@ -142,12 +140,10 @@ namespace {
   void _full_game_over(uint8_t sel) {
     _background("GAME OVER", colour::red);
 
-    char buf[32];
+    char buf[48];
     const sim::state& v = sim::view();
-    snprintf(buf, sizeof(buf), "Points: %lu Best: %lu", v.points, points::best());
-    display::text(buf, 36, 88, colour::white, 2);
-    snprintf(buf, sizeof(buf), "Wave: %u Kills: %u", v.wave, v.kills);
-    display::text(buf, 36, 110, colour::white, 2);
+    snprintf(buf, sizeof(buf), "Points: %lu  Wave: %u  Kills: %u", v.points, v.wave, v.kills);
+    display::text(buf, 36, 96, colour::white, 1);
 
     _list_rows(_table(screens::id::game_over), sel);
   }

@@ -64,16 +64,17 @@ int main() {
   // what it does catch is a layout change that makes a row collide with the text above it
   // or run into the footer. Rows sit at y0 + i*row in both the full paint and the cursor.
   {
-    const int ROW = 24, GLYPH = 16, FOOT_GAP = 16;
+    const int ROW = 24, GLYPH = 16, FOOT = 224; // footer pinned to the glass bottom
     struct Screen { int y0, count, above, last; const char* label; };
     const Screen screens[3] = {
         {96, 3, 64 + 2 * 8, 144, "menu/mode/pause"},
-        {142, 2, 110 + 2 * 8, 166, "game over"},
+        {120, 2, 96 + 8, 144, "game over"}, // single size-1 stat line at 96, rows at 120
         {80, 5, 48 + 2 * 8, 176, "team"}, // centred block: title 48, names 80..176
     };
+    check(FOOT + 8 <= 240, "footer runs off the glass");
     for (int s = 0; s < 3; ++s) {
       const Screen& sc = screens[s];
-      const int foot = sc.y0 + sc.count * ROW + FOOT_GAP;
+      const int foot = FOOT;
       check(sc.y0 + (sc.count - 1) * ROW == sc.last, "menu row pitch misses the last row");
       for (int i = 0; i < sc.count; ++i) {
         const int y = sc.y0 + i * ROW;

@@ -216,7 +216,7 @@ void game::_enter_game_over() {
   const sim::state& v = sim::view();
   // the host owns the wallet and the SD card; a client only mirrors the screen
   if (!_net_multi || _handler.role() == ROLE_HOST) {
-    points::add_run(v.kills, v.points, v.wave); // best is the wallet at death: earned minus spent
+    points::add_run(v.kills, v.points, v.wave); // fold the run: wallet at death, kills, wave
   }
   _scr = screens::id::game_over;
   _sel = 0;

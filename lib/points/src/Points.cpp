@@ -9,21 +9,16 @@
 #include "Points.h"
 
 namespace {
-  constexpr uint32_t _MAGIC = 0x5A3C21EDu;
+  constexpr uint32_t _MAGIC = 0x5A3C21EFu; // bumped when best/kills totals were dropped
   constexpr const char* _PATH = "/z32.json";
 
   struct _rtc_points {
     uint32_t magic;
-    uint32_t best;
-    uint32_t total_kills;
     points::run hist[points::HISTORY_N]; // recent first, index 0 is the newest
     uint8_t len; // runs actually stored, 0..HISTORY_N
   };
 
   RTC_NOINIT_ATTR _rtc_points _rtc;
-
-  uint32_t _best = 0;
-  uint32_t _total_kills = 0;
   points::run _hist[points::HISTORY_N] = {};
   uint8_t _len = 0;
   bool _sd_ready = false;
@@ -40,8 +35,6 @@ namespace {
 
   void _mirror_rtc() {
     _rtc.magic = _MAGIC;
-    _rtc.best = _best;
-    _rtc.total_kills = _total_kills;
     _rtc.len = _len;
     for (uint8_t i = 0; i < points::HISTORY_N; ++i) {
       _rtc.hist[i] = _hist[i];
@@ -84,14 +77,6 @@ namespace {
       Serial.println("[points] save corrupt");
       return;
     }
-    const uint32_t sb = doc["best"] | 0u;
-    const uint32_t sk = doc["total_kills"] | 0u;
-    if (sb > _best) {
-      _best = sb;
-    }
-    if (sk > _total_kills) {
-      _total_kills = sk;
-    }
     if (_len == 0) { // rtc empty after a power loss: adopt the card history
       JsonArray runs = doc["runs"].as<JsonArray>();
       for (JsonObject r : runs) {
@@ -117,8 +102,6 @@ namespace {
       return;
     }
     JsonDocument doc;
-    doc["best"] = _best;
-    doc["total_kills"] = _total_kills;
     JsonArray runs = doc["runs"].to<JsonArray>();
     for (uint8_t i = 0; i < _len; ++i) {
       JsonObject r = runs.add<JsonObject>();
@@ -135,40 +118,24 @@ namespace {
 
 void points::load() {
   if (_rtc.magic == _MAGIC) {
-    _best = _rtc.best;
-    _total_kills = _rtc.total_kills;
     _len = _rtc.len > HISTORY_N ? HISTORY_N : _rtc.len;
     for (uint8_t i = 0; i < HISTORY_N; ++i) {
       _hist[i] = _rtc.hist[i];
     }
   } else {
-    _best = 0;
-    _total_kills = 0;
     _len = 0;
     for (uint8_t i = 0; i < HISTORY_N; ++i) {
       _hist[i] = {0, 0, 0};
     }
   }
-  _sd_load_merge(); // power-loss recovery: the card only ever merges upward
+  _sd_load_merge(); // power-loss recovery: adopt the card history when the RTC is empty
   _mirror_rtc();
 }
 
 void points::add_run(uint32_t kills, uint32_t wallet, uint8_t wave) {
-  _total_kills += kills;
-  if (wallet > _best) {
-    _best = wallet;
-  }
   _push({wallet, kills, wave});
   _mirror_rtc();
   _sd_save(); // once per death, cheap enough to mount+write here
-}
-
-uint32_t points::best() {
-  return _best;
-}
-
-uint32_t points::total_kills() {
-  return _total_kills;
 }
 
 const points::run* points::history() {

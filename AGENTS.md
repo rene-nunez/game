@@ -30,7 +30,7 @@
 - `lib/render` — camera (focus player per board: host/solo P1, client P2; downed frames its body), terrain repaint, arena sprites (P1 blue, P2 cyan, downed yellow) + shop price tags + centred prompt strip; reads `sim::view()` + `tilemap` (tags are tile-anchored)
 - `lib/panel` — bottom strip: `POINTS/W+K/GUN` + HP(+H2 co-op, `DOWN n` while bleeding)/DMG/SPD pips + 2px/tile minimap (P1 white, P2 cyan, downed yellow); reads `render` + `sim::view()`
 - `lib/buzz` — passive-buzzer jingles, non-blocking (`update(now)`); `game` fires it from `sim::last_event`
-- `lib/points` — RTC-backed `{best, total_kills}` + last-4 runs `{pts,kills,wave}` recent-first, mirrored to `/z32.json` on microSD; same callers (`load/add_run(kills,wallet,wave)/best/total_kills/history/history_len`)
+- `lib/points` — RTC-backed last-4 runs `{pts,kills,wave}` recent-first, mirrored to `/z32.json` on microSD; same callers (`load/add_run(kills,wallet,wave)/history/history_len`)
 - `lib/screens` — `id` enum + item tables + menu chrome
 - `lib/game` — state machine + input edges + **frame order**; only place calling sim + render + panel + screens + buzz together
 - `src/main.cpp` — `game::begin(DEVICE_ROLE)` + `game::update()`
@@ -43,7 +43,7 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 - glass 240x320 ST7789; world 960x480 (60x30 x 16px); bands: HUD 10px (role badge only), arena 160px, panel 70px (10+160+70 = 240 exactly)
 - arena 320x160, camera clamped x[0,640] y[0,320] → exact **3x3 grid**, x{0,320,640} y{0,160,320}; hard-cut by cell (`_cell_cam`), repaint **80 rows/frame** before sprites
 - frame pacing is a target deadline (`_frame_ms` 33), not `delay(33)`
-- menus never repaint per frame: `screens::paint(scr, sel)` full-paints on entry, then only the two cursor lines; items are size 2 (12x16 glyphs) at `y0 + i*24` (`_menu_y` 96, footer +16), `_item` takes absolute y; zombie chrome (lime titles/cursor, gray rows/hints, red over/logo); stale `sel` wraps via `% count`; anything entering `playing` calls `screens::invalidate()`
+- menus never repaint per frame: `screens::paint(scr, sel)` full-paints on entry, then only the two cursor lines; items are size 2 (12x16 glyphs) at `y0 + i*24` (`_menu_y` 96, footer +16), `_item` takes absolute y; zombie chrome (lime titles/cursor, gray rows/hints, red over/logo, points-style verbs pinned at 224); stale `sel` wraps via `% count`; anything entering `playing` calls `screens::invalidate()`
 - menu wrap reads `screens::count(scr)`; `static_assert` pins one table row per `screens::id`
 - erase is per-pixel-equivalent (`_erase_world_rect` run-lengths over `tilemap::color_at`); frame order `render::clear()` → `sim::step()` → `render::update_camera()` → `render::draw()` owned by `game`; all arena fills clip to `[10,170)`
 - `test/test_native` never compiles `Game.cpp`/sim/render/panel/screens (need Arduino); verify menu geometry on glass
@@ -56,7 +56,7 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 - zombie spawns: random-offset scan, first walkable tile >= 100px away
 - BFS `field` rebuilds only when the player's **tile** changes (one field per player); `_zombie_steer` descends the nearest alive player's field to the best of 8 neighbours' centres (3 retries, direct chase on `UNREACHABLE`); pass `float&` members (never copies) to `_move_entity`
 - `sim` exposes one read-only `view()` (`reset()`, `step(now)->bool`, `set_p2/set_p2_active` for the peer, `revive(p)` for lifts); death (nobody standing: downed doesn't count) reported by return value, screens raised by caller; points zeroed only in `reset()`; bled-out respawn at the next wave, downed rise at 3 HP
-- economy: points are the spendable wallet (shared co-op); best is the wallet at death (earned minus shop spending); `render`/`panel` never move state; `game` owns shop proximity + `INTERACT` edge per player + `buzz` firing from `last_event`
+- economy: points are the spendable wallet (shared co-op); each death stores wallet/kills/wave; `render`/`panel` never move state; `game` owns shop proximity + `INTERACT` edge per player + `buzz` firing from `last_event`
 
 ## Shop (F1) — agreed prices/stats
 
@@ -67,11 +67,11 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 
 ## Roadmap
 
-- **F1 shop+roulette** ✅ done: `sim::state` += `weapon/dmg_lvl/spd_lvl/points/last_event` (+`actor.kind`); `game` proximity+buy; `panel` pips+`GUN`; verify exact-points buys, levels, wallet-best on glass
+- **F1 shop+roulette** ✅ done: `sim::state` += `weapon/dmg_lvl/spd_lvl/points/last_event` (+`actor.kind`); `game` proximity+buy; `panel` pips+`GUN`; verify exact-points buys, levels, wallet on glass
 - **F2 Z32+intro+screens** ✅ done: `z32` title strings (repo path unchanged); `screens::id` += `logo` → `team` (both centred chrome, 2.5s timed/FIRE-skippable; team lists 5 ASCII names) → `menu`
 - **F3 buzzer** ✅ done: `lib/buzz` on GPIO 26 via LEDC (ch 0), non-blocking sequencer (`update(now)`); jingles menu/shoot/buy/roulette/hurt/wave/game-over (+denied), fired from `last_event`
 - **F4 runners+boss** ✅ done: kinds (normal spd40/hp 2+wave/2/dmg1/pts 10+2·wave / runner spd70/hp 1+wave/6/dmg1/pts 15+2·wave / boss spd30/hp 20+wave/dmg2/pts 150+10·wave), waves (total `min(wave+3,8)`; runners 0 en w1, luego `min(wave/2,total/2)`; boss roba slot 0 cada `wave%5==0`), colours red/orange/purple (`render`+`panel` por `actor.kind`), cap-8 slots; balance on glass
-- **F5 microSD**: share TFT SPI + CS22; `Points.cpp` → JSON `{best,total_kills}` (best = wallet at death); same 4 functions; needs hardware
+- **F5 microSD**: share TFT SPI + CS22; `Points.cpp` → JSON run history; same 3 functions; needs hardware
 - **F6 net co-op** (implemented, needs 2-board test): packed `game_state` 125B (u16 qpos + bit flags incl. downed/bleed, no floats; meta += game-owned `screen`+`sel` for the pause mirror, sim leaves them alone) + `player_input` 5B; host authoritative (sims both, broadcasts ~30Hz), client sends inputs + mirrors snapshots; Solo local on both boards and silent (`playing`/`game_over` never branch on role when `!_net_multi`, focus always P1), Multi via `waiting` (host joins on heartbeat, client joins on live snapshot w/ `_cli_last_rx` grace, peer/10s-timeout/FIRE-solo); P2 shares wallet/gun, heals self, downed→revive-to-3HP or wave-respawn; multi focus per board (`render::set_focus` host P1/client P2); pause is host-owned and screen-driven on the client (`_mirror_pause` paints the host cursor, never steps it; PAUSE toggles from either board, Continue/Restart/Exit stay host-only); client quiet 3s → menu. Test: Solo OK on both envs; waiting timeout solo; 2 boards join/move/P2-kill/down-revive/pause-from-either/resume-from-either/restart/exit/over, 0 `delivery failed`
 
 ## Add a message

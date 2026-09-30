@@ -9,9 +9,9 @@ curarte, subir daño y velocidad, o prueba suerte en la ruleta para conseguir me
 - Supervivencia por oleadas infinitas (4 zombis en ronda 1 hasta 8 simultáneos).
 - 4 armas: pistola inicial + SMG, escopeta (3 perdigones) y rifle por ruleta.
 - 3 máquinas expendedoras con niveles permanentes + ruleta de armas.
-- Puntos como cartera: ganas por matar, gastas en tienda; el récord es tu cartera al morir.
+- Puntos como cartera: ganas por matar, gastas en tienda; al morir se guardan puntos, ronda y bajas.
 - Minimapa en vivo con posición, zombis y encuadre de cámara.
-- Récord y muertes totales guardados entre partidas (memoria RTC, sobreviven al sueño profundo).
+- Últimas 4 partidas (puntos, ronda y bajas) guardadas entre partidas (memoria RTC, sobreviven al sueño profundo).
 - Menús: inicio, modo de juego, puntos, pausa y game over. Botón de apagado con sueño profundo.
 
 ## Mecánicas
@@ -19,8 +19,8 @@ curarte, subir daño y velocidad, o prueba suerte en la ruleta para conseguir me
 - **Oleadas**: cada ronda trae `ronda + 3` zombis (máximo 8 a la vez). Al limpiarlos llega la siguiente.
 - **Zombis**: vida `2 + ronda/2` (r1=2, r6=5, r10=7). Persiguen por el laberinto y quitan 1 HP
   por contacto (con 0.5s de inmunidad entre golpes). Jugador con 5 HP.
-- **Puntos**: cada baja paga `10 + 2·ronda` (r1=12 … r6=22). Gastar baja tu cartera; el *Best*
-  guarda la cartera que tenías al morir (ganado menos gastado).
+- **Puntos**: cada baja paga `10 + 2·ronda` (r1=12 … r6=22). Gastar baja tu cartera; al morir
+  se guardan los puntos que tenías (ganado menos gastado), la ronda y las bajas.
 - **Tiendas** (acércate y pulsa INTERACT):
   - **H verde — Heal 100**: +2 HP.
   - **D roja — Daño 150**: +25% de daño por nivel, máximo 5 (pistola pega 2 desde nv2).
