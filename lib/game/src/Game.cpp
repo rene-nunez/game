@@ -876,10 +876,9 @@ void game::_update_pause() {
 }
 
 void game::_update_game_over() {
-  _nav_step();
   // solo on either board is a local game over; only a multi client mirrors the host.
   if (_net_multi && _handler.role() == ROLE_CLIENT) {
-    // mirror only: the host owns restart, we follow its snapshots back to playing
+    // full mirror like the pause chrome: the host owns the cursor, we only paint it
     if (_rx_ready) {
       sim::apply_snapshot(_rx_state);
       _rx_ready = false;
@@ -901,9 +900,15 @@ void game::_update_game_over() {
       _enter_menu(); // host left: drop to menu
       return;
     }
+    uint8_t s = _rx_state.sel;
+    if (s >= screens::count(screens::id::game_over)) {
+      s = 0; // corrupt cursor never blanks the chrome (paint guards sel too)
+    }
+    _sel = s;
     screens::paint(_scr, _sel);
     return;
   }
+  _nav_step();
   if (input::fire_pressed()) {
     buzz::play(buzz::jingle::menu);
     if (_sel == 0) {

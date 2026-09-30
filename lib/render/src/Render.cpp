@@ -78,7 +78,15 @@ void render::update_camera() {
   const sim::state& v = sim::view();
   // each board frames its own player, so co-op splits across districts freely. A downed
   // focus still frames its body (spectate the rescue); only an inactive focus falls back.
+  // A bled-out body (active, hp 0, not downed) spectates the living partner until the
+  // next wave respawns it: the rule is per frame, so the camera returns on its own.
   uint8_t f = _focus;
+  const uint8_t o = (f == 0) ? 1 : 0;
+  const bool f_dead = v.players[f].active && !v.players[f].downed && v.players[f].hp == 0;
+  const bool o_out = v.players[o].active && !v.players[o].downed && v.players[o].hp > 0;
+  if (f_dead && o_out) {
+    f = o;
+  }
   if (!v.players[f].active) {
     f = (f == 0) ? 1 : 0;
   }
