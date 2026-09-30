@@ -68,7 +68,7 @@ int main() {
     struct Screen { int y0, count, above, last; const char* label; };
     const Screen screens[3] = {
         {96, 3, 64 + 2 * 8, 144, "menu/mode/pause"},
-        {120, 2, 96 + 8, 144, "game over"}, // single size-1 stat line at 96, rows at 120
+        {128, 2, 96 + 2 * 8, 152, "game over"}, // centred size-2 stat line at 96, rows at 128
         {80, 5, 48 + 2 * 8, 176, "team"}, // centred block: title 48, names 80..176
     };
     check(FOOT + 8 <= 240, "footer runs off the glass");

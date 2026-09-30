@@ -13,7 +13,7 @@ namespace {
   // The chrome sits centred: title at 64, first row at 96 on the 240px glass. Items are
   // size 2 (12x16 glyphs, 24px pitch); hints stay size 1.
   constexpr int16_t _menu_x = 16, _menu_y = 96, _menu_row = 24;
-  constexpr int16_t _over_x = 24, _over_y = 120; // the game over screen is indented
+  constexpr int16_t _over_x = 24, _over_y = 128; // the game over screen is indented
 
   const char* const _menu_items[] = { "Start Game", "Points", "Exit" };
   const char* const _mode_items[] = { "Solo", "Multiplayer", "Back" };
@@ -113,6 +113,7 @@ namespace {
 
   void _full_points() {
     _background("POINTS", colour::lime);
+    display::text("last 4 rounds", (display::width() - 13 * 6) / 2, 84, colour::gray, 1);
 
     char buf[32];
 
@@ -121,11 +122,11 @@ namespace {
     const uint8_t n = points::history_len();
     const points::run* h = points::history();
     if (n == 0) {
-      display::text("no runs yet", 16, 96, colour::gray, 2);
+      display::text("no runs yet", 16, 100, colour::gray, 2);
     }
     for (uint8_t i = 0; i < n && i < points::HISTORY_N; ++i) {
       snprintf(buf, sizeof(buf), "R%u P%lu K%lu W%u", i + 1, h[i].pts, h[i].kills, h[i].wave);
-      display::text(buf, 16, (int16_t)(96 + i * 24), rank_col[i], 2);
+      display::text(buf, 16, (int16_t)(100 + i * 24), rank_col[i], 2);
     }
 
     display::text("FIRE/PAUSE: back", 16, 224, colour::gray, 1);
@@ -140,10 +141,17 @@ namespace {
   void _full_game_over(uint8_t sel) {
     _background("GAME OVER", colour::red);
 
+    // single stats line, size 2 and centred (same P/W/K shorthand as the points list)
     char buf[48];
     const sim::state& v = sim::view();
-    snprintf(buf, sizeof(buf), "Points: %lu  Wave: %u  Kills: %u", v.points, v.wave, v.kills);
-    display::text(buf, 36, 96, colour::white, 1);
+    snprintf(buf, sizeof(buf), "P:%lu W:%u K:%u", v.points, v.wave, v.kills);
+    uint8_t len = 0;
+    while (buf[len] != '\0') {
+      ++len;
+    }
+    const int16_t tw = (int16_t)len * 12; // size-2 glyphs are 12px wide
+    const int16_t sx = ((int16_t)display::width() - tw) / 2;
+    display::text(buf, sx < 0 ? 0 : sx, 96, colour::white, 2);
 
     _list_rows(_table(screens::id::game_over), sel);
   }
