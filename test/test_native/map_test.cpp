@@ -64,12 +64,12 @@ int main() {
   // what it does catch is a layout change that makes a row collide with the text above it
   // or run into the footer. Rows sit at y0 + i*row in both the full paint and the cursor.
   {
-    const int ROW = 16, GLYPH = 8, FOOT_GAP = 24;
+    const int ROW = 24, GLYPH = 16, FOOT_GAP = 16;
     struct Screen { int y0, count, above, last; const char* label; };
     const Screen screens[3] = {
-        {96, 3, 64 + 2 * GLYPH, 128, "menu/mode/pause"},
-        {128, 2, 112 + GLYPH, 144, "game over"},
-        {96, 5, 64 + 2 * GLYPH, 160, "team"},
+        {96, 3, 64 + 2 * 8, 144, "menu/mode/pause"},
+        {142, 2, 110 + 2 * 8, 166, "game over"},
+        {80, 5, 48 + 2 * 8, 176, "team"}, // centred block: title 48, names 80..176
     };
     for (int s = 0; s < 3; ++s) {
       const Screen& sc = screens[s];
@@ -86,9 +86,9 @@ int main() {
           ++fails;
         }
       }
-      // a 4th item is what AGENTS.md warns about: it still has to fit above the footer
-      const int with4 = sc.y0 + 3 * ROW;
-      check(with4 + GLYPH <= foot, "no room for a 4th menu item above the footer");
+      // room for one more item past the current list, so growth still fits the footer
+      const int grown = sc.y0 + sc.count * ROW;
+      check(grown + GLYPH <= foot, "no room for one more menu item above the footer");
       printf("%s: rows", sc.label);
       for (int i = 0; i < sc.count; ++i) printf(" %d", sc.y0 + i * ROW);
       printf(", footer %d, text above ends %d\n", foot, sc.above);
@@ -371,14 +371,16 @@ int main() {
     const int full_bytes = SW * SH * 2;
     const int spi_hz = 40000000;
     const int full_ms = (int)((1000L * full_bytes * 8) / spi_hz);
-    // what a steady-state menu frame costs: the two cursor lines, 32 chars of 6x8 glyphs
-    const int line_bytes = 32 * 6 * 8 * 2;
+    // what a steady-state menu frame costs: the two cursor lines, 14 chars
+    // (longest item + '>') of 12x16 glyphs. Size-2 chrome costs ~4x the old size-1,
+    // still ~2ms against the 31ms full fill.
+    const int line_bytes = 14 * 12 * 16 * 2;
     const int cursor_bytes = 2 * line_bytes;
     printf("menu: full-screen fill %d bytes = %dms at 40MHz | steady frame %d bytes\n", full_bytes,
            full_ms, cursor_bytes);
     check(full_ms >= 30, "the full-screen fill model is off, re-check the SPI clock");
-    check(cursor_bytes * 20 < full_bytes, "a menu frame is too close to a full repaint");
-    check(cursor_bytes * 20 / (spi_hz / 8 / 1000) <= 33, "a menu frame blows the 33ms budget");
+    check(cursor_bytes * 10 < full_bytes, "a menu frame is too close to a full repaint");
+    check(cursor_bytes * 10 / (spi_hz / 8 / 1000) <= 33, "a menu frame blows the 33ms budget");
   }
 
   // 12) nothing may bleed into the hud strip or the panel

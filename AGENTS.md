@@ -43,7 +43,7 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 - glass 240x320 ST7789; world 960x480 (60x30 x 16px); bands: HUD 10px (role badge only), arena 160px, panel 70px (10+160+70 = 240 exactly)
 - arena 320x160, camera clamped x[0,640] y[0,320] → exact **3x3 grid**, x{0,320,640} y{0,160,320}; hard-cut by cell (`_cell_cam`), repaint **80 rows/frame** before sprites
 - frame pacing is a target deadline (`_frame_ms` 33), not `delay(33)`
-- menus never repaint per frame: `screens::paint(scr, sel)` full-paints on entry, then only the two cursor lines; rows at `y0 + i*_menu_row`, `_item` takes absolute y; anything entering `playing` calls `screens::invalidate()`
+- menus never repaint per frame: `screens::paint(scr, sel)` full-paints on entry, then only the two cursor lines; items are size 2 (12x16 glyphs) at `y0 + i*24` (`_menu_y` 96, footer +16), `_item` takes absolute y; zombie chrome (lime titles/cursor, gray rows/hints, red over/logo); stale `sel` wraps via `% count`; anything entering `playing` calls `screens::invalidate()`
 - menu wrap reads `screens::count(scr)`; `static_assert` pins one table row per `screens::id`
 - erase is per-pixel-equivalent (`_erase_world_rect` run-lengths over `tilemap::color_at`); frame order `render::clear()` → `sim::step()` → `render::update_camera()` → `render::draw()` owned by `game`; all arena fills clip to `[10,170)`
 - `test/test_native` never compiles `Game.cpp`/sim/render/panel/screens (need Arduino); verify menu geometry on glass

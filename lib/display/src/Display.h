@@ -12,6 +12,8 @@ namespace colour {
   constexpr uint16_t cyan = 0x07FF;
   constexpr uint16_t orange = 0xFD20; // runner
   constexpr uint16_t purple = 0x781F; // boss
+  constexpr uint16_t gray = 0xAD55;   // dim menu rows and hints
+  constexpr uint16_t lime = 0xB7E0;   // toxic menu titles and cursor
 }
 
 class display {
