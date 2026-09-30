@@ -280,10 +280,10 @@ int16_t render::_sprite_tl(int16_t e, uint8_t size) {
 }
 
 void render::_draw_actor(int16_t ex, int16_t ey, uint8_t size, const uint16_t* img) {
-  // the erase path skips rows outside the arena, so the paint must clip to the same
-  // window: otherwise sprite pixels stranded in the HUD/panel are never cleaned.
-  const int16_t sx = _sprite_tl(ex, size);
-  const int16_t sy = _sprite_tl(ey, size);
+  // world -> screen, like _fill_world_box: the erase path maps the same way, so a
+  // missing offset here paints where the erase never cleans (10px-high ghost band).
+  const int16_t sx = _sprite_tl(ex, size) - _cam_x;
+  const int16_t sy = _sprite_tl(ey, size) - _cam_y + HUD_H;
   int16_t r0 = 0;
   int16_t r1 = (int16_t)SPRITE - 1;
   if (sy < HUD_H) {
@@ -299,15 +299,18 @@ void render::_draw_actor(int16_t ex, int16_t ey, uint8_t size, const uint16_t* i
 }
 
 void render::_frame_box(int16_t sx, int16_t sy, uint16_t col) {
+  // sx/sy arrive in world coords (sprite top-left): map to screen like the actor above
+  const int16_t x0 = sx - _cam_x;
+  const int16_t y0 = sy - _cam_y + HUD_H;
   // the downed frame only paints fully inside the arena, for the same erase symmetry
-  if (sx < 0 || sy < HUD_H || sx + SPRITE > (int16_t)display::width() ||
-      sy + SPRITE > ARENA_BOTTOM) {
+  if (x0 < 0 || y0 < HUD_H || x0 + SPRITE > (int16_t)display::width() ||
+      y0 + SPRITE > ARENA_BOTTOM) {
     return;
   }
-  display::fill_rect(sx, sy, SPRITE, 1, col);
-  display::fill_rect(sx, sy + SPRITE - 1, SPRITE, 1, col);
-  display::fill_rect(sx, sy, 1, SPRITE, col);
-  display::fill_rect(sx + SPRITE - 1, sy, 1, SPRITE, col);
+  display::fill_rect(x0, y0, SPRITE, 1, col);
+  display::fill_rect(x0, y0 + SPRITE - 1, SPRITE, 1, col);
+  display::fill_rect(x0, y0, 1, SPRITE, col);
+  display::fill_rect(x0 + SPRITE - 1, y0, 1, SPRITE, col);
 }
 
 // flat bullets: one box per shot, nothing to ghost on erase.
