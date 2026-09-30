@@ -1,15 +1,15 @@
 #pragma once
 
-#include <Arduino.h>
-
+#include <cstdint>
+#include <pgmspace.h>
 
 #define ZOMBIE2_WIDTH  16
 #define ZOMBIE2_HEIGHT 16
 
-// Color utilizado como transparencia
+// Colour used as transparency
 #define ZOMBIE2_TRANSPARENT 0x0000
 
-// Datos de imagen en formato RGB565
+// Image data in RGB565 format
 static const uint16_t zombie2[] PROGMEM = {
     // ∙∙∙∙∙∙∙∙∙∙∙∙∙∙∙∙
     // ∙∙∙∙▒▒▒▒▒░░▒▒▒▒∙

@@ -1,19 +1,16 @@
 #pragma once
 
-#include <Arduino.h>
+#include <cstdint>
+#include <pgmspace.h>
 
-// ========================================
-// PERSONAJE 2
-// ========================================
+#define PLAYER2_WIDTH  16
+#define PLAYER2_HEIGHT 16
 
-#define PERSONAJE2_WIDTH  16
-#define PERSONAJE2_HEIGHT 16
+// Colour used as transparency
+#define PLAYER2_TRANSPARENT 0x0000
 
-// Color utilizado como transparencia
-#define PERSONAJE2_TRANSPARENT 0x0000
-
-// Datos de imagen en formato RGB565
-static const uint16_t personaje2[] PROGMEM = {
+// Image data in RGB565 format
+static const uint16_t player2[] PROGMEM = {
     // ∙∙∙∙∙∙∙∙∙∙∙∙∙∙∙∙
     // ∙∙∙░░░░▓▓▓∙∙∙∙∙∙
     // ∙∙░░░░░▓▓▓∙∙∙∙∙∙

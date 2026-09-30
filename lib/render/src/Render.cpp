@@ -4,15 +4,7 @@
 #include <Display.h>
 #include <map.h>
 #include <Sim.h>
-
-#include <personaje1.h>
-#include <personaje2.h>
-#include <zombie1.h>
-#include <zombie2.h>
-#include <zombie_boss1.h>
-#include <zombie_boss2.h>
-#include <zombie_rapido1.h>
-#include <zombie_rapido2.h>
+#include <sprites.h>
 
 #include "Render.h"
 
@@ -325,7 +317,7 @@ void render::draw() {
     if (!v.players[p].active) {
       continue;
     }
-    const uint16_t* img = (p == 0) ? personaje1 : personaje2;
+    const uint16_t* img = (p == 0) ? player1 : player2;
     if (v.players[p].downed) {
       const int16_t sx = _sprite_tl((int16_t)v.players[p].x, sim::PLAYER_SIZE);
       const int16_t sy = _sprite_tl((int16_t)v.players[p].y, sim::PLAYER_SIZE);
@@ -339,7 +331,7 @@ void render::draw() {
     if (v.zombies[i].active) {
       const uint16_t* img = zombie1;
       if (v.zombies[i].kind == sim::actor_kind::runner) {
-        img = (frame == 0) ? zombie_rapido1 : zombie_rapido2;
+        img = (frame == 0) ? zombie_runner1 : zombie_runner2;
       } else if (v.zombies[i].kind == sim::actor_kind::boss) {
         img = (frame == 0) ? zombie_boss1 : zombie_boss2;
       } else if (frame != 0) {
