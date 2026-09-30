@@ -23,11 +23,11 @@
 
 - `include/` — `pins.h`, `tft_setup.h` (ST7789 + `TFT_INVERSION_OFF` + `TFT_RGB_ORDER TFT_BGR`, panel BGR)
 - `lib/network` — raw ESP-NOW, no message logic; `lib/protocol` — `msg_type` + packed structs (`NetState.h`: `game_state` 125B + `player_input` 5B, Arduino-free so `test_native` checks sizes/round-trips); `lib/handler` — typed routing/dispatch
-- `lib/display` — `display` + `colour`; the only place TFT_eSPI is used
+- `lib/display` — `display` + `colour` (+`draw_sprite` for PROGMEM RGB565 art, `0x0000` transparent); the only place TFT_eSPI is used
 - `lib/input` — joystick (ADC1) + buttons (debounce + edge)
 - `lib/world` — `tilemap`: 60x30 all-grass maze, `_art` rows, wall queries, spawn, BFS `field` (+`field2` for player 2); tiles: grass (only walkable), hedge walls, three 2x2 vendings (H heal green, D damage red, S speed blue) + 2x2 roulette (visual 32px sprites in `color_at`, price tags in `render`)
 - `lib/sim` — players[2] (P1 local, P2 net/inactive Solo), zombies, bullets, waves, shared wallet/gun/levels, downed/bleed/revive (0 HP → downed 15s, partner lifts with INTERACT to 3 HP, dead respawn per wave); owns state, never touches screen/menus/network/sound (emits `last_event` incl. `revive`); `snapshot/apply_snapshot` move the net state, P2 ctl comes from `set_p2`
-- `lib/render` — camera (focus player per board: host/solo P1, client P2; downed frames its body, bled-out spectates the living partner until respawn), terrain repaint, arena sprites (P1 blue, P2 cyan, downed yellow) + shop price tags + centred prompt strip; reads `sim::view()` + `tilemap` (tags are tile-anchored)
+- `lib/render` — camera (focus player per board: host/solo P1, client P2; downed frames its body, bled-out spectates the living partner until respawn), terrain repaint, 16px PROGMEM sprites centred on the hitboxes (P1/P2 single frame, zombies 2-frame ~4Hz walk; downed keeps its sprite + yellow frame) + shop price tags + centred prompt strip; reads `sim::view()` + `tilemap` (tags are tile-anchored)
 - `lib/panel` — bottom strip: `POINTS` size 2 + HP(+H2 co-op, `DOWN n` while bleeding, red at ≤2HP)/DMG/SPD pips + 2px/tile minimap (P1 white, P2 cyan, downed yellow); reads `render` + `sim::view()`
 - `lib/buzz` — passive-buzzer jingles, non-blocking (`update(now)`); `game` fires it from `sim::last_event`
 - `lib/points` — RTC-backed last-4 runs `{pts,kills,wave}` recent-first, mirrored to `/z32.json` on microSD; same callers (`load/add_run(kills,wallet,wave)/history/history_len`)

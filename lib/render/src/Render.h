@@ -11,6 +11,7 @@ class render {
     static constexpr uint8_t HUD_H = 10;
     static constexpr uint8_t ARENA_H = 160;
     static constexpr int16_t ARENA_BOTTOM = HUD_H + ARENA_H; // panel starts here
+    static constexpr uint8_t SPRITE = 16; // actor art is 16x16, centred on the hitbox
 
     static void repaint();     // schedule a full arena repaint from the tilemap
     static void repaint_step(); // paint up to PAINT_CHUNK pending arena rows
@@ -34,6 +35,10 @@ class render {
     static const char* _prompt; // shop prompt for this frame, null = none (set by game)
 
     static int16_t _cell_cam(int16_t p, int16_t step, int16_t max_cam);
+    static int16_t _sprite_tl(int16_t e, uint8_t size); // 16px art centred on an size-px hitbox
+    static void _draw_actor(int16_t ex, int16_t ey, uint8_t size,
+                            const uint16_t* img); // centred sprite
+    static void _frame_box(int16_t sx, int16_t sy, uint16_t col); // 1px frame, downed rescue
     static void _fill_world_run(int16_t wx, int16_t sy, int16_t w, uint16_t col);
     static void _erase_world_rect(int16_t wx, int16_t wy, uint8_t size);
     static void _erase_world_area(int16_t wx, int16_t wy, int16_t w, int16_t h);

@@ -1,8 +1,18 @@
+#include <Arduino.h>
 #include <cstdio>
 
 #include <Display.h>
 #include <map.h>
 #include <Sim.h>
+
+#include <personaje1.h>
+#include <personaje2.h>
+#include <zombie1.h>
+#include <zombie2.h>
+#include <zombie_boss1.h>
+#include <zombie_boss2.h>
+#include <zombie_rapido1.h>
+#include <zombie_rapido2.h>
 
 #include "Render.h"
 
@@ -170,12 +180,15 @@ void render::clear() {
   const sim::state& v = sim::view();
   for (uint8_t p = 0; p < sim::NUM_PLAYERS; ++p) {
     if (v.players[p].active) {
-      _erase_world_rect((int16_t)v.players[p].x, (int16_t)v.players[p].y, sim::PLAYER_SIZE);
+      // erase the 16px sprite rect, not the hitbox: draw() paints centred art
+      _erase_world_rect(_sprite_tl((int16_t)v.players[p].x, sim::PLAYER_SIZE),
+                        _sprite_tl((int16_t)v.players[p].y, sim::PLAYER_SIZE), SPRITE);
     }
   }
   for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
     if (v.zombies[i].active) {
-      _erase_world_rect((int16_t)v.zombies[i].x, (int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE);
+      _erase_world_rect(_sprite_tl((int16_t)v.zombies[i].x, sim::ZOMBIE_SIZE),
+                        _sprite_tl((int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE), SPRITE);
     }
   }
   for (uint8_t i = 0; i < sim::MAX_BULLETS; ++i) {
@@ -260,34 +273,76 @@ void render::_shop_labels(bool erase) {
   }
 }
 
-// flat actors: one box per entity, nothing to ghost on erase.
-// The HUD carries no render text: game draws only the role badge up there,
+// 16px art centred on the hitbox: draw and erase share this so no pixel ghosts.
+// Players stand still on one frame; zombies walk a 2-frame cycle at ~4Hz.
+int16_t render::_sprite_tl(int16_t e, uint8_t size) {
+  return e + ((int16_t)size - (int16_t)SPRITE) / 2;
+}
+
+void render::_draw_actor(int16_t ex, int16_t ey, uint8_t size, const uint16_t* img) {
+  // the erase path skips rows outside the arena, so the paint must clip to the same
+  // window: otherwise sprite pixels stranded in the HUD/panel are never cleaned.
+  const int16_t sx = _sprite_tl(ex, size);
+  const int16_t sy = _sprite_tl(ey, size);
+  int16_t r0 = 0;
+  int16_t r1 = (int16_t)SPRITE - 1;
+  if (sy < HUD_H) {
+    r0 = HUD_H - sy;
+  }
+  if (sy + r1 >= ARENA_BOTTOM) {
+    r1 = ARENA_BOTTOM - 1 - sy;
+  }
+  if (r0 > r1) {
+    return;
+  }
+  display::draw_sprite(sx, sy + r0, SPRITE, (uint8_t)(r1 - r0 + 1), img + r0 * SPRITE);
+}
+
+void render::_frame_box(int16_t sx, int16_t sy, uint16_t col) {
+  // the downed frame only paints fully inside the arena, for the same erase symmetry
+  if (sx < 0 || sy < HUD_H || sx + SPRITE > (int16_t)display::width() ||
+      sy + SPRITE > ARENA_BOTTOM) {
+    return;
+  }
+  display::fill_rect(sx, sy, SPRITE, 1, col);
+  display::fill_rect(sx, sy + SPRITE - 1, SPRITE, 1, col);
+  display::fill_rect(sx, sy, 1, SPRITE, col);
+  display::fill_rect(sx + SPRITE - 1, sy, 1, SPRITE, col);
+}
+
+// flat bullets: one box per shot, nothing to ghost on erase.
+// The HUD carries no render text: game draws W/K, gun and role badge up there,
 // stats live in the panel.
 void render::draw() {
   repaint_step(); // terrain first, so a cut never paints over a live sprite
 
   const sim::state& v = sim::view();
+  const uint8_t frame = (uint8_t)((millis() / 250) & 1u); // zombie walk cycle
   for (uint8_t p = 0; p < sim::NUM_PLAYERS; ++p) {
     if (!v.players[p].active) {
       continue;
     }
+    const uint16_t* img = (p == 0) ? personaje1 : personaje2;
     if (v.players[p].downed) {
-      _fill_world_box((int16_t)v.players[p].x, (int16_t)v.players[p].y, sim::PLAYER_SIZE,
-                      colour::yellow); // body to rescue
+      const int16_t sx = _sprite_tl((int16_t)v.players[p].x, sim::PLAYER_SIZE);
+      const int16_t sy = _sprite_tl((int16_t)v.players[p].y, sim::PLAYER_SIZE);
+      _draw_actor((int16_t)v.players[p].x, (int16_t)v.players[p].y, sim::PLAYER_SIZE, img);
+      _frame_box(sx, sy, colour::yellow); // body to rescue
     } else if (v.players[p].hp > 0) {
-      _fill_world_box((int16_t)v.players[p].x, (int16_t)v.players[p].y, sim::PLAYER_SIZE,
-                      p == 0 ? colour::blue : colour::cyan);
+      _draw_actor((int16_t)v.players[p].x, (int16_t)v.players[p].y, sim::PLAYER_SIZE, img);
     }
   }
   for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
     if (v.zombies[i].active) {
-      uint16_t col = colour::red;
+      const uint16_t* img = zombie1;
       if (v.zombies[i].kind == sim::actor_kind::runner) {
-        col = colour::orange;
+        img = (frame == 0) ? zombie_rapido1 : zombie_rapido2;
       } else if (v.zombies[i].kind == sim::actor_kind::boss) {
-        col = colour::purple;
+        img = (frame == 0) ? zombie_boss1 : zombie_boss2;
+      } else if (frame != 0) {
+        img = zombie2;
       }
-      _fill_world_box((int16_t)v.zombies[i].x, (int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE, col);
+      _draw_actor((int16_t)v.zombies[i].x, (int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE, img);
     }
   }
   for (uint8_t i = 0; i < sim::MAX_BULLETS; ++i) {
