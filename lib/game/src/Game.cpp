@@ -760,8 +760,8 @@ void game::_draw_hud() {
   const int16_t sw = (int16_t)display::width();
   char buf[24];
 
-  display::fill_rect(0, 0, 76, 8, colour::black);
-  snprintf(buf, sizeof(buf), "W%u K%u", v.wave, v.kills);
+  display::fill_rect(0, 0, 124, 8, colour::black);
+  snprintf(buf, sizeof(buf), "WAVES %u KILLS %u", v.wave, v.kills);
   display::text(buf, 4, 1, colour::white, 1);
 
   char gun[12];
@@ -771,7 +771,7 @@ void game::_draw_hud() {
     ++glen;
   }
   const int16_t gx = (sw - (int16_t)glen * 6) / 2;
-  display::fill_rect(116, 0, 88, 8, colour::black);
+  display::fill_rect(120, 0, 84, 8, colour::black);
   display::text(gun, gx < 0 ? 0 : gx, 1, colour::white, 1);
 
   const char* badge = !_net_multi ? "SOLO" : (_handler.role() == ROLE_HOST ? "HOST" : "CLIENT");

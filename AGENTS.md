@@ -28,7 +28,7 @@
 - `lib/world` — `tilemap`: 60x30 all-grass maze, `_art` rows, wall queries, spawn, BFS `field` (+`field2` for player 2); tiles: grass (only walkable), hedge walls, three 2x2 vendings (H heal green, D damage red, S speed blue) + 2x2 roulette (visual 32px sprites in `color_at`, price tags in `render`)
 - `lib/sim` — players[2] (P1 local, P2 net/inactive Solo), zombies, bullets, waves, shared wallet/gun/levels, downed/bleed/revive (0 HP → downed 15s, partner lifts with INTERACT to 3 HP, dead respawn per wave); owns state, never touches screen/menus/network/sound (emits `last_event` incl. `revive`); `snapshot/apply_snapshot` move the net state, P2 ctl comes from `set_p2`
 - `lib/render` — camera (focus player per board: host/solo P1, client P2; downed frames its body), terrain repaint, arena sprites (P1 blue, P2 cyan, downed yellow) + shop price tags + centred prompt strip; reads `sim::view()` + `tilemap` (tags are tile-anchored)
-- `lib/panel` — bottom strip: `POINTS` size 2 + HP(+H2 co-op, `DOWN n` while bleeding, red flash at ≤2HP)/DMG/SPD pips + `BOSS!` status row + 2px/tile minimap (P1 white, P2 cyan, downed yellow); reads `render` + `sim::view()`
+- `lib/panel` — bottom strip: `POINTS` size 2 + HP(+H2 co-op, `DOWN n` while bleeding, red at ≤2HP)/DMG/SPD pips + 2px/tile minimap (P1 white, P2 cyan, downed yellow); reads `render` + `sim::view()`
 - `lib/buzz` — passive-buzzer jingles, non-blocking (`update(now)`); `game` fires it from `sim::last_event`
 - `lib/points` — RTC-backed last-4 runs `{pts,kills,wave}` recent-first, mirrored to `/z32.json` on microSD; same callers (`load/add_run(kills,wallet,wave)/history/history_len`)
 - `lib/screens` — `id` enum + item tables + menu chrome
