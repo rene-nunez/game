@@ -113,20 +113,22 @@ namespace {
 
   void _full_points() {
     _background("POINTS", colour::lime);
-    display::text("last 4 rounds", (display::width() - 13 * 6) / 2, 84, colour::gray, 1);
 
     char buf[32];
 
-    // last-4 runs, recent first, ranked gold/silver/bronze/gray
+    // last-4 runs, recent first, ranked gold/silver/bronze/gray. Empty state keeps the
+    // "no runs yet" placeholder; once runs land, that slot becomes the section header.
     static const uint16_t rank_col[] = {colour::yellow, colour::white, colour::orange, colour::gray};
     const uint8_t n = points::history_len();
     const points::run* h = points::history();
     if (n == 0) {
       display::text("no runs yet", 16, 100, colour::gray, 2);
+      return;
     }
+    display::text("last 4 rounds", 16, 100, colour::gray, 2);
     for (uint8_t i = 0; i < n && i < points::HISTORY_N; ++i) {
       snprintf(buf, sizeof(buf), "R%u P%lu K%lu W%u", i + 1, h[i].pts, h[i].kills, h[i].wave);
-      display::text(buf, 16, (int16_t)(100 + i * 24), rank_col[i], 2);
+      display::text(buf, 16, (int16_t)(124 + i * 24), rank_col[i], 2);
     }
 
     display::text("FIRE/PAUSE: back", 16, 224, colour::gray, 1);
