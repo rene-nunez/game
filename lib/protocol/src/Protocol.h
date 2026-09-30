@@ -3,7 +3,6 @@
 #include <cstdint>
 
 #include <Network.h>
-
 #include "NetState.h"
 
 // handlers can dispatch from data[0] the `type` without parsing the rest
