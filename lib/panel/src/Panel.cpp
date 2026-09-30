@@ -80,8 +80,10 @@ void panel::draw() {
   auto hp_row = [&](uint8_t p, int16_t y, const char* label, uint16_t ok_col) {
     display::fill_rect(0, y, mx, 8, colour::black);
     if (v.players[p].downed) {
-      snprintf(buf, sizeof(buf), "%s DOWN %u", label, v.players[p].bleed);
-      display::text(buf, 4, y, colour::yellow, 1); // seconds shrink, cleared above
+      // countdown starts where the pips (and DMG/SPD levels) start: same column, same row
+      display::text(label, 4, y, colour::white, 1);
+      snprintf(buf, sizeof(buf), "DOWN %u", v.players[p].bleed);
+      display::text(buf, 28, y, colour::yellow, 1); // seconds shrink, cleared above
       return;
     }
     const uint16_t col = (v.players[p].hp <= 2) ? colour::red : ok_col; // low hp reads red
