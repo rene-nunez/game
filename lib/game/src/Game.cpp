@@ -138,7 +138,11 @@ void game::_on_heartbeat(const uint8_t* data, size_t len) {
   heartbeat_msg hb;
   memcpy(&hb, data, sizeof(hb));
   _peer_tick = hb.tick;
-  _peer_seen = true; // any peer heartbeat counts while waiting (consumed there)
+  // the host starts a co-op run off heartbeats; the client waits for a snapshot
+  // (live map) instead, so heartbeats never flip a waiting client into playing.
+  if (_handler.role() == ROLE_HOST) {
+    _peer_seen = true; // any peer heartbeat counts while waiting (consumed there)
+  }
 }
 
 void game::_on_state(const uint8_t* data, size_t len) {
@@ -178,11 +182,13 @@ int8_t game::_nav_edge() {
 
 void game::_start_game(bool multi) {
   _net_multi = multi;
-  render::set_focus(_handler.role() == ROLE_CLIENT ? 1 : 0); // each board frames its own
+  // solo always frames player 1; multi frames the local board (host P1, client P2)
+  render::set_focus((multi && _handler.role() == ROLE_CLIENT) ? 1 : 0); // each board frames its own
   _seq_out = 0;
   _in_buttons = _in_prev = 0;
   _in_jx = _in_jy = 0.0f;
   _rx_ready = false;
+  _cli_last_rx = millis(); // grace window so a fresh client is not instantly "quiet"
   _p2_interact = _p2_pause_edge = false;
   sim::reset();
   if (multi && _handler.role() == ROLE_HOST) {
@@ -562,15 +568,23 @@ void game::_update_waiting() {
     _start_game(false); // tired of waiting: play solo
     return;
   }
-  if (_peer_seen) {
+  if (_handler.role() == ROLE_CLIENT) {
+    // the client joins off a live snapshot (host map), never off a bare heartbeat,
+    // so it lands straight into the running frame instead of an empty reset.
+    if (_rx_ready) {
+      const net::game_state_msg snap = _rx_state; // copy: _start_game clears the flag
+      _rx_ready = false;
+      _peer_seen = false;
+      buzz::play(buzz::jingle::wave);
+      _start_game(true);
+      sim::apply_snapshot(snap); // start from the live frame, not the reset one
+      _cli_last_rx = millis();
+      return;
+    }
+  } else if (_peer_seen) {
     _peer_seen = false;
     buzz::play(buzz::jingle::wave);
     _start_game(true); // peer showed up (a client also joins mid-run off snapshots)
-    if (_handler.role() == ROLE_CLIENT && _rx_ready) {
-      sim::apply_snapshot(_rx_state); // start from the live frame, not the reset one
-      _rx_ready = false;
-      _cli_last_rx = millis();
-    }
     return;
   }
   if (now - _wait_since >= _wait_ms) {
@@ -592,6 +606,11 @@ void game::_update_points() {
 }
 
 void game::_update_playing() {
+  // solo is always a local sim on both boards (silent radio); only multi + client mirrors.
+  if (!_net_multi) {
+    _update_playing_host();
+    return;
+  }
   if (_handler.role() == ROLE_CLIENT) {
     _update_playing_client();
     return;
@@ -727,7 +746,8 @@ void game::_update_pause() {
 
 void game::_update_game_over() {
   _nav_step();
-  if (_handler.role() == ROLE_CLIENT) {
+  // solo on either board is a local game over; only a multi client mirrors the host.
+  if (_net_multi && _handler.role() == ROLE_CLIENT) {
     // mirror only: the host owns restart, we follow its snapshots back to playing
     if (_rx_ready) {
       sim::apply_snapshot(_rx_state);
