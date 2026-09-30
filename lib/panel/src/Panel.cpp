@@ -51,8 +51,9 @@ void panel::init() {
   _mm_n = 0;
 }
 
-void panel::_pip_row(int16_t y, const char* label, uint8_t lvl, uint8_t max, uint16_t col) {
-  display::text(label, 4, y, colour::white, 1);
+void panel::_pip_row(int16_t y, const char* label, uint8_t lvl, uint8_t max, uint16_t col,
+                     uint16_t label_col) {
+  display::text(label, 4, y, label_col, 1);
   const uint16_t spent = display::rgb565(40, 40, 40);
   for (uint8_t i = 0; i < max; ++i) {
     display::fill_rect(28 + (int16_t)i * 10, y, 8, 8, (i < lvl) ? col : spent);
@@ -60,51 +61,59 @@ void panel::_pip_row(int16_t y, const char* label, uint8_t lvl, uint8_t max, uin
 }
 
 void panel::draw() {
-  // stats live on the left of the panel; the HUD carries only the role badge.
-  // Every text row is cleared first: numbers and names shrink (POINTS 200 -> 50,
-  // SHOTGUN -> SMG) and overpainting alone would leave ghost digits behind.
+  // stats live left of the minimap; wave/kills and the gun moved to the 10px HUD, so this
+  // keeps POINTS big plus the pip rows with room to breathe. Every row is cleared first:
+  // numbers shrink and overpainting alone would leave ghost digits behind.
   const sim::state& v = sim::view();
   const int16_t mx = _mm_x();
+  const uint32_t now = millis();
   char buf[32];
 
-  display::fill_rect(0, render::ARENA_BOTTOM + 4, mx, 8, colour::black);
+  display::fill_rect(0, render::ARENA_BOTTOM + 4, mx, 16, colour::black);
   snprintf(buf, sizeof(buf), "POINTS %lu", v.points);
-  display::text(buf, 4, render::ARENA_BOTTOM + 4, colour::yellow, 1);
+  display::text(buf, 4, render::ARENA_BOTTOM + 4, colour::yellow, 2);
 
-  display::fill_rect(0, render::ARENA_BOTTOM + 14, mx, 8, colour::black);
-  snprintf(buf, sizeof(buf), "W%u K%u", v.wave, v.kills);
-  display::text(buf, 4, render::ARENA_BOTTOM + 14, colour::white, 1);
-
-  display::fill_rect(0, render::ARENA_BOTTOM + 24, mx, 8, colour::black);
-  snprintf(buf, sizeof(buf), "GUN %s", sim::gun_name());
-  display::text(buf, 4, render::ARENA_BOTTOM + 24, colour::white, 1);
-
-  // co-op squeezes the rows (8px pitch) to fit the second HP line; solo keeps 10px
+  // co-op squeezes the rows (9px pitch) to fit the second HP line; solo keeps 12px
   const bool p2 = v.players[1].active;
-  const int16_t hp_y = p2 ? render::ARENA_BOTTOM + 32 : render::ARENA_BOTTOM + 34;
-  const int16_t tail_y = hp_y + (p2 ? 16 : 10);
+  const int16_t hp_y = render::ARENA_BOTTOM + (p2 ? 22 : 24);
+  const int16_t pitch = p2 ? 9 : 12;
+  const int16_t tail_y = hp_y + (p2 ? 18 : 12); // DMG row (HP, [+H2,] then DMG/SPD/status)
 
-  const uint16_t hp_col = (v.players[0].hp <= 2) ? colour::red : colour::green;
-  if (v.players[0].downed) {
-    display::fill_rect(0, hp_y, mx, 8, colour::black); // seconds shrink, clear first
-    snprintf(buf, sizeof(buf), "HP DOWN %u", v.players[0].bleed);
-    display::text(buf, 4, hp_y, colour::yellow, 1);
-  } else {
-    _pip_row(hp_y, "HP", v.players[0].hp, sim::PLAYER_HP_MAX, hp_col);
-  }
-  if (p2) {
-    if (v.players[1].downed) {
-      display::fill_rect(0, hp_y + 8, mx, 8, colour::black); // seconds shrink, clear first
-      snprintf(buf, sizeof(buf), "H2 DOWN %u", v.players[1].bleed);
-      display::text(buf, 4, hp_y + 8, colour::yellow, 1);
-    } else {
-      const uint16_t h2_col = (v.players[1].hp <= 2) ? colour::red : colour::cyan;
-      _pip_row(hp_y + 8, "H2", v.players[1].hp, sim::PLAYER_HP_MAX, h2_col);
+  auto hp_row = [&](uint8_t p, int16_t y, const char* label, uint16_t ok_col) {
+    display::fill_rect(0, y, mx, 8, colour::black);
+    if (v.players[p].downed) {
+      snprintf(buf, sizeof(buf), "%s DOWN %u", label, v.players[p].bleed);
+      display::text(buf, 4, y, colour::yellow, 1); // seconds shrink, cleared above
+      return;
     }
+    if (v.players[p].hp <= 2 && ((now / 250) & 1u)) {
+      // low-hp flash on the label+pips only (28 + 4 pips + pad), not the whole row
+      display::fill_rect(0, y, 80, 8, colour::red);
+      _pip_row(y, label, v.players[p].hp, sim::PLAYER_HP_MAX, colour::black, colour::black);
+    } else {
+      const uint16_t col = (v.players[p].hp <= 2) ? colour::red : ok_col;
+      _pip_row(y, label, v.players[p].hp, sim::PLAYER_HP_MAX, col);
+    }
+  };
+  hp_row(0, hp_y, "HP", colour::green);
+  if (p2) {
+    hp_row(1, hp_y + pitch, "H2", colour::cyan);
   }
+  display::fill_rect(0, tail_y, mx, 8, colour::black);
   _pip_row(tail_y, "DMG", v.dmg_lvl, sim::MAX_LVL, colour::red);
-  _pip_row(tail_y + (p2 ? 8 : 10), "SPD", v.spd_lvl, sim::MAX_LVL,
-           display::rgb565(60, 130, 230));
+  display::fill_rect(0, tail_y + pitch, mx, 8, colour::black);
+  _pip_row(tail_y + pitch, "SPD", v.spd_lvl, sim::MAX_LVL, display::rgb565(60, 130, 230));
+
+  // persistent status row: boss alive. Bleed-down shows inline in the HP rows above.
+  const int16_t st_y = tail_y + 2 * pitch;
+  display::fill_rect(0, st_y, mx, 8, colour::black);
+  bool boss = false;
+  for (uint8_t i = 0; i < sim::MAX_ZOMBIES && !boss; ++i) {
+    boss = v.zombies[i].active && v.zombies[i].kind == sim::actor_kind::boss;
+  }
+  if (boss) {
+    display::text("BOSS!", 4, st_y, colour::red, 1);
+  }
 }
 
 void panel::_mm_restore_row(int16_t tx0, int16_t tx1, int16_t ty) {

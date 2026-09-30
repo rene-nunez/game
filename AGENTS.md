@@ -28,7 +28,7 @@
 - `lib/world` — `tilemap`: 60x30 all-grass maze, `_art` rows, wall queries, spawn, BFS `field` (+`field2` for player 2); tiles: grass (only walkable), hedge walls, three 2x2 vendings (H heal green, D damage red, S speed blue) + 2x2 roulette (visual 32px sprites in `color_at`, price tags in `render`)
 - `lib/sim` — players[2] (P1 local, P2 net/inactive Solo), zombies, bullets, waves, shared wallet/gun/levels, downed/bleed/revive (0 HP → downed 15s, partner lifts with INTERACT to 3 HP, dead respawn per wave); owns state, never touches screen/menus/network/sound (emits `last_event` incl. `revive`); `snapshot/apply_snapshot` move the net state, P2 ctl comes from `set_p2`
 - `lib/render` — camera (focus player per board: host/solo P1, client P2; downed frames its body), terrain repaint, arena sprites (P1 blue, P2 cyan, downed yellow) + shop price tags + centred prompt strip; reads `sim::view()` + `tilemap` (tags are tile-anchored)
-- `lib/panel` — bottom strip: `POINTS/W+K/GUN` + HP(+H2 co-op, `DOWN n` while bleeding)/DMG/SPD pips + 2px/tile minimap (P1 white, P2 cyan, downed yellow); reads `render` + `sim::view()`
+- `lib/panel` — bottom strip: `POINTS` size 2 + HP(+H2 co-op, `DOWN n` while bleeding, red flash at ≤2HP)/DMG/SPD pips + `BOSS!` status row + 2px/tile minimap (P1 white, P2 cyan, downed yellow); reads `render` + `sim::view()`
 - `lib/buzz` — passive-buzzer jingles, non-blocking (`update(now)`); `game` fires it from `sim::last_event`
 - `lib/points` — RTC-backed last-4 runs `{pts,kills,wave}` recent-first, mirrored to `/z32.json` on microSD; same callers (`load/add_run(kills,wallet,wave)/history/history_len`)
 - `lib/screens` — `id` enum + item tables + menu chrome
@@ -40,7 +40,7 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 
 ## Display (TFT)
 
-- glass 240x320 ST7789; world 960x480 (60x30 x 16px); bands: HUD 10px (role badge only), arena 160px, panel 70px (10+160+70 = 240 exactly)
+- glass 240x320 ST7789; world 960x480 (60x30 x 16px); bands: HUD 10px (`W+K` left, `GUN` centre, role badge right, owned by `game`), arena 160px, panel 70px (10+160+70 = 240 exactly)
 - arena 320x160, camera clamped x[0,640] y[0,320] → exact **3x3 grid**, x{0,320,640} y{0,160,320}; hard-cut by cell (`_cell_cam`), repaint **80 rows/frame** before sprites
 - frame pacing is a target deadline (`_frame_ms` 33), not `delay(33)`
 - menus never repaint per frame: `screens::paint(scr, sel)` full-paints on entry, then only the two cursor lines; items are size 2 (12x16 glyphs) at `y0 + i*24` (`_menu_y` 96, footer +16), `_item` takes absolute y; zombie chrome (lime titles/cursor, gray rows/hints, red over/logo, points-style verbs pinned at 224); stale `sel` wraps via `% count`; anything entering `playing` calls `screens::invalidate()`
@@ -62,7 +62,7 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 
 - vending (proximity + `INTERACT`, one machine per buff): **H heal green 100** (+2 HP), **D damage red +25%/lvl max5 base 150**, **S speed blue +8%/lvl max5 base 120**; level price = base + 200·lvl; denied/MAX hints; live price tags (`DMG 650`) float over the machines
 - roulette 100 → weighted weapon (SMG 40 / pistol 15 / shotgun 30 / rifle 15); weapons come only from roulette, never bought directly; start pistol (dmg1/cd500); SMG (dmg1/cd180); shotgun (3 pellets/cd900); rifle (dmg4/cd800)
-- panel shows `POINTS/W+K/GUN` + HP/DMG/SPD pips (text, no sprites); prompt is the arena-centred strip owned by `render`
+- HUD shows `W+K/GUN`/badge, panel shows `POINTS` + HP/DMG/SPD pips (text, no sprites); prompt is the arena-centred strip owned by `render`
 - zombies: total `min(wave+3,8)`; normal (spd40/hp 2+wave/2/dmg1, +10+2·wave pts, red), **runner** (spd70/hp 1+wave/6 —2 hits desde w6—/dmg1, +15+2·wave pts, orange; 0 en w1, luego `min(wave/2,total/2)`), **boss** (spd30/hp 20+wave —25 en w5, 30 en w10—/dmg2, +150+10·wave pts —200 en w5—, purple, roba slot 0 cada `wave%5==0`); `render`+`panel` colorean por `actor.kind`
 
 ## Roadmap

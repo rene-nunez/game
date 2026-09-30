@@ -91,6 +91,8 @@ class game {
     static void _update_playing_client(); // input tx + snapshot apply + draw
     static void _send_input();            // ship sticks/buttons (client, every frame)
     static void _mirror_pause(); // host-owned pause chrome on the client (screen-driven)
+    static void _draw_hud();     // 10px strip: W/K left, gun centre, role badge right
+    static bool _boss_alive();   // any active boss in the sim view (both boards mirror it)
     static void _update_pause();
     static void _update_game_over();
     static void _update_logo();

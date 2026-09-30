@@ -669,14 +669,18 @@ void game::_update_playing_host() {
   } else {
     _shop_update(now); // INTERACT buys + prompt, before the panel paints it
   }
+  if (sim::view().last_event == sim::event::wave && _boss_alive()) {
+    // boss waves announce over the proximity prompt: buys still win, proximity waits
+    snprintf(_hint_buf, sizeof(_hint_buf), "BOSS WAVE!");
+    _hint_until = now + 2000;
+    render::prompt(_hint_buf);
+  }
   _fire_buzz(); // jingle for the frame's event (revive/buys already overwrote shots)
   render::update_camera();
   render::draw();
   panel::draw();
   panel::blips();
-  // the role badge is net state, not sim state, so it does not belong to the renderer
-  display::text(_net_multi ? "HOST" : "SOLO", (int16_t)(display::width() - 34), 1, colour::cyan,
-                1);
+  _draw_hud(); // wave/kills + gun + role, every frame with clears (values shrink)
   if (_net_multi) {
     _broadcast(); // ~30Hz state to the client, right after the frame simmed
   }
@@ -722,12 +726,62 @@ void game::_update_playing_client() {
   } else {
     _shop_prompt(_shop_at(1), "");
   }
+  const uint32_t cli_now = millis();
+  if (sim::view().last_event == sim::event::wave && _boss_alive()) {
+    snprintf(_hint_buf, sizeof(_hint_buf), "BOSS WAVE!"); // 2s locally, like the host hint
+    _hint_until = cli_now + 2000;
+  }
+  if (cli_now < _hint_until && _hint_buf[0] != '\0') {
+    render::prompt(_hint_buf); // recent boss wave wins over the proximity prompt
+  }
   _fire_buzz(); // the snapshot carries the event, so both buzzers sing
   render::update_camera();
   render::draw();
   panel::draw();
   panel::blips();
-  display::text("P2", (int16_t)(display::width() - 34), 1, colour::cyan, 1);
+  _draw_hud();
+}
+
+bool game::_boss_alive() {
+  const sim::state& v = sim::view();
+  for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
+    if (v.zombies[i].active && v.zombies[i].kind == sim::actor_kind::boss) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void game::_draw_hud() {
+  // the 10px strip is net+sim state, not renderer state, so game paints it: wave/kills
+  // left, gun centred, role badge right. Every field is cleared first (K12 -> K9 and
+  // SHOTGUN -> SMG shrink, overpainting alone would leave ghost digits behind).
+  const sim::state& v = sim::view();
+  const int16_t sw = (int16_t)display::width();
+  char buf[24];
+
+  display::fill_rect(0, 0, 76, 8, colour::black);
+  snprintf(buf, sizeof(buf), "W%u K%u", v.wave, v.kills);
+  display::text(buf, 4, 1, colour::white, 1);
+
+  char gun[12];
+  snprintf(gun, sizeof(gun), "GUN %s", sim::gun_name());
+  uint8_t glen = 0;
+  while (gun[glen] != '\0') {
+    ++glen;
+  }
+  const int16_t gx = (sw - (int16_t)glen * 6) / 2;
+  display::fill_rect(116, 0, 88, 8, colour::black);
+  display::text(gun, gx < 0 ? 0 : gx, 1, colour::white, 1);
+
+  const char* badge = !_net_multi ? "SOLO" : (_handler.role() == ROLE_HOST ? "HOST" : "CLIENT");
+  uint8_t blen = 0;
+  while (badge[blen] != '\0') {
+    ++blen;
+  }
+  const int16_t bx = sw - 4 - (int16_t)blen * 6; // same 4px margin as the left field
+  display::fill_rect(sw - 46, 0, 46, 8, colour::black);
+  display::text(badge, bx < 0 ? 0 : bx, 1, colour::cyan, 1);
 }
 
 void game::_send_input() {

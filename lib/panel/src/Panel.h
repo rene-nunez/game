@@ -30,7 +30,8 @@ class panel {
     static int16_t _mm_cty;
 
     static int16_t _mm_x();
-    static void _pip_row(int16_t y, const char* label, uint8_t lvl, uint8_t max, uint16_t col);
+    static void _pip_row(int16_t y, const char* label, uint8_t lvl, uint8_t max, uint16_t col,
+                         uint16_t label_col = colour::white);
     static void _mm_restore_row(int16_t tx0, int16_t tx1, int16_t ty);
     static void _mm_restore_col(int16_t tx, int16_t ty0, int16_t ty1);
     static void _mm_dot(int16_t wx, int16_t wy, uint16_t col);
