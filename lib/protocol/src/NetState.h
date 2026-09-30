@@ -6,7 +6,7 @@
 // (snapshot/apply_snapshot); game only moves these bytes.
 //
 // Layout (little-endian, same core both ends):
-//   game_state: type(1) + seq(2) + players 2x7 + meta 10 + zombies 8x6 + bullets 8x6 = 123B
+//   game_state: type(1) + seq(2) + players 2x7 + meta 12 + zombies 8x6 + bullets 8x6 = 125B
 //   player_input: type(1) + jx(1) + jy(1) + buttons(1) + seq(1) = 5B
 // Both fit the 250 bytes/msg cap with room to spare.
 #include <cmath>
@@ -16,9 +16,15 @@ namespace net {
   constexpr uint8_t TYPE_STATE = 0x02; // == msg_type::game_state, asserted in Protocol.h
   constexpr uint8_t TYPE_INPUT = 0x10; // == msg_type::player_input, asserted in Protocol.h
 
-  constexpr size_t STATE_LEN = 123;
+  constexpr size_t STATE_LEN = 125;
   constexpr size_t INPUT_LEN = 5;
   constexpr size_t MAX_MSG = 250;
+
+  // screen mirror for the co-op pause menu: the host owns it, the client only paints it.
+  // game-owned bytes: sim::snapshot leaves them alone, game sets them per broadcast.
+  constexpr uint8_t SCREEN_PLAYING = 0;
+  constexpr uint8_t SCREEN_PAUSE = 1;
+  constexpr uint8_t SCREEN_OVER = 2;
 
   // button bitmask for player_input (levels; host derives edges)
   constexpr uint8_t fire_bit = 0x01;
@@ -65,6 +71,8 @@ namespace net {
     uint8_t dmg_lvl = 0;
     uint8_t spd_lvl = 0;
     uint8_t event = 0; // sim::event as u8
+    uint8_t screen = 0; // SCREEN_* (game-owned menu mirror)
+    uint8_t sel = 0;    // pause cursor (game-owned, host drives it)
     net_zombie zombies[8];
     net_bullet bullets[8];
   };

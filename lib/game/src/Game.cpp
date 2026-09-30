@@ -33,6 +33,7 @@ float game::_in_jx = 0.0f;
 float game::_in_jy = 0.0f;
 uint32_t game::_in_last_ms = 0;
 volatile bool game::_rx_ready = false;
+bool game::_cli_mirror = false;
 net::game_state_msg game::_rx_state;
 net::game_state_msg game::_tx_state;
 uint32_t game::_cli_last_rx = 0;
@@ -185,9 +186,10 @@ void game::_start_game(bool multi) {
   // solo always frames player 1; multi frames the local board (host P1, client P2)
   render::set_focus((multi && _handler.role() == ROLE_CLIENT) ? 1 : 0); // each board frames its own
   _seq_out = 0;
-  _in_buttons = _in_prev = 0;
+  _in_prev = _in_buttons; // hold levels so a held PAUSE/FIRE does not phantom-edge on entry
   _in_jx = _in_jy = 0.0f;
   _rx_ready = false;
+  _cli_mirror = false; // a fresh run owns the arena again, never the pause chrome
   _cli_last_rx = millis(); // grace window so a fresh client is not instantly "quiet"
   _p2_interact = _p2_pause_edge = false;
   sim::reset();
@@ -224,6 +226,15 @@ void game::_broadcast() {
   _tx_state.type = net::TYPE_STATE;
   _tx_state.seq = _seq_out++;
   sim::snapshot(_tx_state);
+  // the menu mirror rides the snapshot: the host owns pause/over chrome, the client paints it
+  if (_scr == screens::id::pause) {
+    _tx_state.screen = net::SCREEN_PAUSE;
+  } else if (_scr == screens::id::game_over) {
+    _tx_state.screen = net::SCREEN_OVER;
+  } else {
+    _tx_state.screen = net::SCREEN_PLAYING;
+  }
+  _tx_state.sel = _sel;
   _handler.send(&_tx_state, sizeof(_tx_state));
 }
 
@@ -672,16 +683,22 @@ void game::_update_playing_host() {
 }
 
 void game::_update_playing_client() {
-  // ship our sticks and buttons every frame; the host owns the sim
-  net::player_input_msg in;
-  in.jx = net::qaxis(input::jx());
-  in.jy = net::qaxis(input::jy());
-  in.buttons = (input::fire_down() ? net::fire_bit : 0) |
-               (input::reload_down() ? net::reload_bit : 0) |
-               (input::interact_down() ? net::interact_bit : 0) |
-               (input::pause_down() ? net::pause_bit : 0);
-  in.seq = (uint8_t)_seq_out++;
-  _handler.send(&in, sizeof(in));
+  _send_input();
+
+  // route off the last snapshot before touching the frame: while the host-owned menu is
+  // up, clear() would spray terrain erases over it, so mirror frames skip clear/draw.
+  if (_rx_state.screen == net::SCREEN_PAUSE) {
+    _mirror_pause(); // _scr stays playing so update() keeps routing here
+    return;
+  }
+  if (_cli_mirror) {
+    // first playing frame after the menu: its chrome covered the arena, so rebuild it
+    // exactly like the host resume path (progressive terrain over the next 2 frames).
+    _cli_mirror = false;
+    screens::invalidate(); // the next pause must repaint its chrome
+    panel::init();         // the pause menu covered the panel and the minimap
+    render::repaint();     // clear leftover pause menu
+  }
 
   // erase at the old frame, then step to the new one: same order as the host
   render::clear();
@@ -713,8 +730,68 @@ void game::_update_playing_client() {
   display::text("P2", (int16_t)(display::width() - 34), 1, colour::cyan, 1);
 }
 
+void game::_send_input() {
+  // ship our sticks and buttons every frame; the host owns the sim
+  net::player_input_msg in;
+  in.jx = net::qaxis(input::jx());
+  in.jy = net::qaxis(input::jy());
+  in.buttons = (input::fire_down() ? net::fire_bit : 0) |
+               (input::reload_down() ? net::reload_bit : 0) |
+               (input::interact_down() ? net::interact_bit : 0) |
+               (input::pause_down() ? net::pause_bit : 0);
+  in.seq = (uint8_t)_seq_out++;
+  _handler.send(&in, sizeof(in));
+}
+
+void game::_mirror_pause() {
+  // Host-owned menu on the client: keep shipping inputs (PAUSE resumes from either
+  // board), paint the host cursor, never step it locally. _scr stays playing so
+  // update() keeps routing here; the chrome entry is tracked by screens::paint itself.
+  // No buzz here: the frozen snapshot event would otherwise jingle every frame.
+  _send_input();
+
+  if (_rx_ready) {
+    sim::apply_snapshot(_rx_state);
+    _rx_ready = false;
+    _cli_last_rx = millis();
+  }
+  if (millis() - _cli_last_rx >= _cli_quiet_ms) {
+    _cli_mirror = false;
+    _net_multi = false;
+    _enter_menu(); // host left: drop to menu
+    return;
+  }
+  if (_rx_state.screen == net::SCREEN_PLAYING) {
+    // host resumed or restarted: rebuild the arena chrome like the host resume path
+    _cli_mirror = false;
+    screens::invalidate(); // the next pause must repaint its chrome
+    panel::init();         // the pause menu covered the panel and the minimap
+    render::repaint();     // clear leftover pause menu
+    return;
+  }
+  if (_rx_state.screen == net::SCREEN_OVER) {
+    _cli_mirror = false;
+    _enter_game_over(); // host declared it, we only mirror (no SD write, see guard)
+    return;
+  }
+  uint8_t s = _rx_state.sel;
+  if (s >= screens::count(screens::id::pause)) {
+    s = 0; // corrupt/clamped cursor never blanks the chrome (paint guards sel)
+  }
+  _cli_mirror = true; // the arena chrome is covered until the one-shot exit above
+  screens::paint(screens::id::pause, s);
+}
+
 void game::_update_pause() {
   _nav_step();
+  // the client keeps shipping inputs while frozen, so derive its PAUSE edge here too:
+  // otherwise nobody converts levels to an edge while the host sits in pause and the
+  // client can never resume.
+  if (_net_multi && _handler.role() == ROLE_HOST) {
+    const bool lvl = (_in_buttons & net::pause_bit) != 0;
+    _p2_pause_edge = lvl && ((_in_prev & net::pause_bit) == 0);
+    _in_prev = _in_buttons;
+  }
   if (input::pause_pressed() || _p2_pause_edge) {
     _p2_pause_edge = false;
     _scr = screens::id::playing;

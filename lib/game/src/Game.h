@@ -47,6 +47,7 @@ class game {
     static float _in_jx, _in_jy;   // latest peer axes (host)
     static uint32_t _in_last_ms;   // last peer input rx time (host, stale check)
     static volatile bool _rx_ready; // snapshot waiting to apply (client)
+    static bool _cli_mirror; // client is painting the host-owned pause (arena chrome is covered)
     static net::game_state_msg _rx_state; // snapshot buffer (client)
     static net::game_state_msg _tx_state; // snapshot scratch (host)
     static uint32_t _cli_last_rx; // last snapshot applied (client, quiet check)
@@ -88,6 +89,8 @@ class game {
     static void _update_playing();
     static void _update_playing_host();   // host sim + broadcast (solo: sim only)
     static void _update_playing_client(); // input tx + snapshot apply + draw
+    static void _send_input();            // ship sticks/buttons (client, every frame)
+    static void _mirror_pause(); // host-owned pause chrome on the client (screen-driven)
     static void _update_pause();
     static void _update_game_over();
     static void _update_logo();
