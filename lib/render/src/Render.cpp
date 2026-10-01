@@ -172,15 +172,18 @@ void render::clear() {
   const sim::state& v = sim::view();
   for (uint8_t p = 0; p < sim::NUM_PLAYERS; ++p) {
     if (v.players[p].active) {
-      // erase the 16px sprite rect, not the hitbox: draw() paints centred art
-      _erase_world_rect(_sprite_tl((int16_t)v.players[p].x, sim::PLAYER_SIZE),
-                        _sprite_tl((int16_t)v.players[p].y, sim::PLAYER_SIZE), SPRITE);
+      // erase the sprite rect, not the hitbox: draw() paints centred art
+      _erase_world_rect(_sprite_tl((int16_t)v.players[p].x, sim::PLAYER_SIZE, SPRITE),
+                        _sprite_tl((int16_t)v.players[p].y, sim::PLAYER_SIZE, SPRITE),
+                        SPRITE);
     }
   }
   for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
     if (v.zombies[i].active) {
-      _erase_world_rect(_sprite_tl((int16_t)v.zombies[i].x, sim::ZOMBIE_SIZE),
-                        _sprite_tl((int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE), SPRITE);
+      const uint8_t art =
+          (v.zombies[i].kind == sim::actor_kind::boss) ? BOSS_ART : SPRITE;
+      _erase_world_rect(_sprite_tl((int16_t)v.zombies[i].x, sim::ZOMBIE_SIZE, art),
+                        _sprite_tl((int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE, art), art);
     }
   }
   for (uint8_t i = 0; i < sim::MAX_BULLETS; ++i) {
@@ -265,20 +268,19 @@ void render::_shop_labels(bool erase) {
   }
 }
 
-// 16px art centred on the hitbox: draw and erase share this so no pixel ghosts.
-// Players stand still on one frame; zombies walk a 2-frame cycle at ~4Hz.
-int16_t render::_sprite_tl(int16_t e, uint8_t size) {
-  return e + ((int16_t)size - (int16_t)SPRITE) / 2;
+// art centred on the hitbox: draw and erase share this so no pixel ghosts.
+int16_t render::_sprite_tl(int16_t e, uint8_t hitbox, uint8_t art) {
+  return e + ((int16_t)hitbox - (int16_t)art) / 2;
 }
 
-void render::_draw_actor(int16_t ex, int16_t ey, uint8_t size, const uint16_t* img,
-                         bool flip) {
+void render::_draw_actor(int16_t ex, int16_t ey, uint8_t hitbox, uint8_t art,
+                         const uint16_t* img, bool flip) {
   // world -> screen, like _fill_world_box: the erase path maps the same way, so a
   // missing offset here paints where the erase never cleans (10px-high ghost band).
-  const int16_t sx = _sprite_tl(ex, size) - _cam_x;
-  const int16_t sy = _sprite_tl(ey, size) - _cam_y + HUD_H;
+  const int16_t sx = _sprite_tl(ex, hitbox, art) - _cam_x;
+  const int16_t sy = _sprite_tl(ey, hitbox, art) - _cam_y + HUD_H;
   int16_t r0 = 0;
-  int16_t r1 = (int16_t)SPRITE - 1;
+  int16_t r1 = (int16_t)art - 1;
   if (sy < HUD_H) {
     r0 = HUD_H - sy;
   }
@@ -289,9 +291,9 @@ void render::_draw_actor(int16_t ex, int16_t ey, uint8_t size, const uint16_t* i
     return;
   }
   if (flip) {
-    display::draw_sprite_hflip(sx, sy + r0, SPRITE, (uint8_t)(r1 - r0 + 1), img + r0 * SPRITE);
+    display::draw_sprite_hflip(sx, sy + r0, art, (uint8_t)(r1 - r0 + 1), img + r0 * art);
   } else {
-    display::draw_sprite(sx, sy + r0, SPRITE, (uint8_t)(r1 - r0 + 1), img + r0 * SPRITE);
+    display::draw_sprite(sx, sy + r0, art, (uint8_t)(r1 - r0 + 1), img + r0 * art);
   }
 }
 
@@ -382,22 +384,23 @@ void render::draw() {
     bool flip = false;
     const uint16_t* img = _player_img(p, v.players[p].facing & 7, flip);
     if (v.players[p].downed) {
-      const int16_t sx = _sprite_tl((int16_t)v.players[p].x, sim::PLAYER_SIZE);
-      const int16_t sy = _sprite_tl((int16_t)v.players[p].y, sim::PLAYER_SIZE);
-      _draw_actor((int16_t)v.players[p].x, (int16_t)v.players[p].y, sim::PLAYER_SIZE, img,
-                  flip);
+      const int16_t sx = _sprite_tl((int16_t)v.players[p].x, sim::PLAYER_SIZE, SPRITE);
+      const int16_t sy = _sprite_tl((int16_t)v.players[p].y, sim::PLAYER_SIZE, SPRITE);
+      _draw_actor((int16_t)v.players[p].x, (int16_t)v.players[p].y, sim::PLAYER_SIZE, SPRITE,
+                  img, flip);
       _frame_box(sx, sy, colour::yellow); // body to rescue
     } else if (v.players[p].hp > 0) {
-      _draw_actor((int16_t)v.players[p].x, (int16_t)v.players[p].y, sim::PLAYER_SIZE, img,
-                  flip);
+      _draw_actor((int16_t)v.players[p].x, (int16_t)v.players[p].y, sim::PLAYER_SIZE, SPRITE,
+                  img, flip);
     }
   }
   for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
     if (v.zombies[i].active) {
       bool flip = false;
       const uint16_t* img = _zombie_img(v.zombies[i].kind, v.zombies[i].facing & 7, flip);
-      _draw_actor((int16_t)v.zombies[i].x, (int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE, img,
-                  flip);
+      const uint8_t art = (v.zombies[i].kind == sim::actor_kind::boss) ? BOSS_ART : SPRITE;
+      _draw_actor((int16_t)v.zombies[i].x, (int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE, art,
+                  img, flip);
     }
   }
   for (uint8_t i = 0; i < sim::MAX_BULLETS; ++i) {
