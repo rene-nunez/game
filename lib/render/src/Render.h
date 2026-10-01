@@ -50,6 +50,5 @@ class render {
     static void _erase_world_area(int16_t wx, int16_t wy, int16_t w, int16_t h);
     static void _fill_world_box(int16_t wx, int16_t wy, uint8_t size, uint16_t col);
     static void _shop_labels(bool erase); // world-anchored price tags over the machines
-    static bool _tags_arm(); // clear(): stale tags? (cut, moved cam, price change, rebuild)
-    static bool _tags_fire(); // draw(): repaint if armed (re-checks dirt/rebuild first)
+    static bool _tags_stale(); // clear(): erase tags only on cut, moved cam, new price, rebuild
 };
