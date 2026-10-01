@@ -42,12 +42,6 @@ void panel::init() {
     display::fill_rect(mx + run_x * _mm_scale, sy, (int16_t)(tilemap::COLS - run_x) * _mm_scale,
                        _mm_scale, run_col);
   }
-
-  const uint16_t grid = display::rgb565(80, 80, 80); // 3x3 camera cell separators
-  for (uint8_t i = 1; i < 3; ++i) {
-    display::fill_rect(mx + (int16_t)(i * (tilemap::COLS / 3)) * _mm_scale, _mm_y, 1, _mm_h, grid);
-    display::fill_rect(mx, _mm_y + (int16_t)(i * (tilemap::ROWS / 3)) * _mm_scale, _mm_w, 1, grid);
-  }
   _mm_n = 0;
 }
 

@@ -10,7 +10,7 @@
 // reads render for the arena origin and the camera, and sim for the blips.
 class panel {
   public:
-    static void init();  // once per run: black panel, minimap terrain, cell separators
+    static void init();  // once per run: black panel + minimap terrain
     static void draw();  // per frame: points, wave/kills, gun, HP/DMG/SPD pips
     static void blips(); // per frame: camera cell frame and the entity dots
 

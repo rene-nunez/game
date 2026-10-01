@@ -9,7 +9,7 @@ namespace tilemap {
   constexpr uint16_t WORLD_W = COLS * TILE;
   constexpr uint16_t WORLD_H = ROWS * TILE;
 
-  constexpr uint8_t FLOOR = 0;  // grass, walkable (the only walkable tile)
+  constexpr uint8_t FLOOR = 0;  // meadow, walkable (the only walkable tile)
   constexpr uint8_t WALL = 1;   // maze wall, solid
   constexpr uint8_t VENDING = 2;// heal vending machine (2x2, green), solid, shop via INTERACT
   constexpr uint8_t ROULETTE = 3;// prize wheel (2x2), solid, roulette via INTERACT
@@ -17,7 +17,7 @@ namespace tilemap {
   constexpr uint8_t V_SPD = 5;  // speed vending machine (2x2, blue), solid, shop via INTERACT
   // NB: 'P' in _art is the player spawn; it parses straight to FLOOR.
 
-  // Super-minimal green village: 60x30 all-grass with a maze interconnecting
+  // Super-minimal grass maze: 60x30 all-meadow with a maze interconnecting
   // every district, including the center, which holds three 2x2 vending machines
   // (D damage red, S speed blue, H heal green) and a 2x2 prize wheel last.
   // 2-tile clear lanes on the ring double as the camera cut lines, so a hard cut

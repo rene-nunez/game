@@ -25,7 +25,7 @@
 - `lib/network` — raw ESP-NOW, no message logic; `lib/protocol` — `msg_type` + packed structs (`NetState.h`: `game_state` 125B + `player_input` 5B, Arduino-free so `test_native` checks sizes/round-trips; spare flag bits carry the 3-bit facing, size unchanged); `lib/handler` — typed routing/dispatch
 - `lib/display` — `display` + `colour` (+`draw_sprite`/`draw_sprite_hflip` for PROGMEM RGB565 art, `0x0000` transparent, mirror reads columns right-to-left); the only place TFT_eSPI is used
 - `lib/input` — joystick (ADC1) + buttons (debounce + edge)
-- `lib/world` — `tilemap`: 60x30 all-grass maze, `_art` rows, wall queries, spawn, BFS `field` (+`field2` for player 2); tiles: grass (only walkable), hedge walls, three 2x2 vendings (H heal green, D damage red, S speed blue) + 2x2 roulette (visual 32px sprites in `color_at`, price tags in `render`)
+- `lib/world` — `tilemap`: 60x30 grass maze, `_art` rows, wall queries, spawn, BFS `field` (+`field2` for player 2); tiles: meadow floor (only walkable), pale concrete walls, three 2x2 vendings (H heal green, D damage red, S speed blue) + 2x2 roulette (visual 32px sprites in `color_at`, price tags in `render`)
 - `lib/sim` — players[2] (P1 local, P2 net/inactive Solo), zombies, bullets, waves, shared wallet/gun/levels, downed/bleed/revive (0 HP → downed 15s, partner lifts with INTERACT to 3 HP, dead respawn per wave); every player/actor carries 8-wind `facing` (`dir_of`: 0=E 1=SE 2=S 3=SW 4=W 5=NW 6=N 7=NE; move-driven, fire aim overrides with 500ms hold, zombies follow the steer); owns state, never touches screen/menus/network/sound (emits `last_event` incl. `revive`); `snapshot/apply_snapshot` move the net state, P2 ctl comes from `set_p2`
 - `lib/sprites` — header-only PROGMEM RGB565 16px actor art; one header per actor (`player1/2` N/S/E/NE/SE, `zombie`/`zombie_runner`/`zombie_boss` N/S/E; W side via hflip, zombie diagonals fold to E/W), each self-contained (`<cstdint>` + `<pgmspace.h>`) and pulled in only via the `sprites.h` fan-out, never a leaf directly
 - `lib/render` — camera (focus player per board: host/solo P1, client P2; downed frames its body, bled-out spectates the living partner until respawn), terrain repaint, 16px PROGMEM sprites centred on the hitboxes (facing selector onto stored art + hflip, single frame; downed keeps its sprite + yellow frame) + shop price tags + centred prompt strip; reads `sim::view()` + `tilemap` (tags are tile-anchored)
@@ -51,7 +51,7 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 
 ## World / sim contracts
 
-- `_art` rows exactly `COLS` chars; map: all grass + 2-tile ring lanes, maze everywhere, center holds 3 vendings + roulette; 1308 walkable (73%), 0 orphans, machines 16/16 reachable (4 per shop), BFS max 76, 0 local minima (all in `run.sh`)
+- `_art` rows exactly `COLS` chars; map: meadow + 2-tile ring lanes, maze everywhere, center holds 3 vendings + roulette (casino 4-colour wheel); 1308 walkable (73%), 0 orphans, machines 16/16 reachable (4 per shop), BFS max 76, 0 local minima (all in `run.sh`)
 - machine sprites must read at 32px (ASCII dump of `color_at`, never by eye)
 - `tilemap::solid_rect` gates movement per axis (X then Y); bullets die on non-walkable
 - zombie spawns: random-offset scan, first walkable tile >= 100px away

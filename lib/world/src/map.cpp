@@ -90,7 +90,7 @@ namespace tilemap {
   uint16_t color(uint8_t t) {
     switch (t) {
       case WALL:
-        return display::rgb565(148, 138, 120); // muted cream-grey stone
+        return display::rgb565(160, 160, 168); // pale concrete wall
       case VENDING:
         return display::rgb565(70, 200, 90); // heal green
       case V_DMG:
@@ -100,7 +100,7 @@ namespace tilemap {
       case ROULETTE:
         return display::rgb565(175, 145, 75); // aged brass
       default:
-        return display::rgb565(85, 95, 65); // muted sage grass
+        return display::rgb565(100, 132, 88); // bright meadow floor
     }
   }
 
@@ -221,7 +221,13 @@ namespace tilemap {
         if (d2 >= 121 && d2 <= 144 && (((gx + gy) & 3) == 0)) {
           return display::rgb565(210, 198, 175); // bone pegs
         }
-        return (zone & 1) ? display::rgb565(150, 65, 45) : base;
+        // casino wheel: red/yellow/green/blue rotating over the 8 zones
+        switch (zone & 3) {
+          case 0: return display::rgb565(220, 60, 50);
+          case 1: return display::rgb565(230, 200, 60);
+          case 2: return display::rgb565(70, 200, 90);
+          default: return display::rgb565(60, 130, 230);
+        }
       }
       default: {
         if (px == 0 || px == 15 || py == 0 || py == 15) {
