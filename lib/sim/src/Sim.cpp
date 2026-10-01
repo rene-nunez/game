@@ -108,6 +108,14 @@ uint8_t sim::dir_of(float dx, float dy) {
   return (uint8_t)(((int)(a + 360.0f + 22.5f) / 45) & 7);
 }
 
+void sim::_face_toward(uint8_t& facing, float dx, float dy) {
+  const uint8_t want = dir_of(dx, dy);
+  const uint8_t diff = (uint8_t)((want - facing) & 7);
+  if (diff != 0 && diff != 1 && diff != 7) {
+    facing = want; // moved 2+ sectors: commit, neighbours keep the old art
+  }
+}
+
 void sim::_move_entity(float& x, float& y, float dx, float dy, uint8_t size) {
   x = constrain(x, 0.0f, (float)(tilemap::WORLD_W - size));
   y = constrain(y, 0.0f, (float)(tilemap::WORLD_H - size));
@@ -127,13 +135,16 @@ bool sim::_step_zombie(uint8_t z, float ddx, float ddy, float dt) {
   if (d <= 0.5f) {
     return false;
   }
-  _s.zombies[z].facing = dir_of(ddx, ddy);
   const float spd = _zombie_speed(_s.zombies[z].kind);
   const float bx = _s.zombies[z].x, by = _s.zombies[z].y;
   // _move_entity takes references, so it has to get the real members, not copies
   _move_entity(_s.zombies[z].x, _s.zombies[z].y, ddx / d * spd * dt, ddy / d * spd * dt,
                ZOMBIE_SIZE);
-  return _s.zombies[z].x != bx || _s.zombies[z].y != by;
+  if (_s.zombies[z].x == bx && _s.zombies[z].y == by) {
+    return false; // walled in: keep the last facing instead of flip-flopping
+  }
+  _face_toward(_s.zombies[z].facing, _s.zombies[z].x - bx, _s.zombies[z].y - by);
+  return true;
 }
 
 void sim::_zombie_steer(uint8_t z, float pcx, float pcy, float dt,
@@ -431,7 +442,7 @@ bool sim::step(uint32_t now) {
       dy /= len;
     }
     if (len > 0.2f && now - _last_aim[p] > AIM_HOLD_MS) {
-      _s.players[p].facing = dir_of(dx, dy); // aim holds briefly after each shot
+      _face_toward(_s.players[p].facing, dx, dy); // neighbouring sectors keep the old art
     }
 
     const float spd = player_speed * _spd_mult(_s.spd_lvl);

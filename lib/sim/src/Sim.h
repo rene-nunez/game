@@ -51,6 +51,9 @@ class sim {
     // facing: 8-wind sector from dir_of(), 0=E 1=SE 2=S 3=SW 4=W 5=NW 6=N 7=NE
     // (+y is south on the glass). Render folds it onto the stored art + hflip.
     static uint8_t dir_of(float dx, float dy);
+    // hysteresis: keep the current sector unless the new one is 2+ steps away,
+    // so border jitter never flip-flops the sprite (mirrors read as blinking)
+    static void _face_toward(uint8_t& facing, float dx, float dy);
 
     struct player_state {
       float x, y;

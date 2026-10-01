@@ -311,7 +311,8 @@ void render::_frame_box(int16_t sx, int16_t sy, uint16_t col) {
 }
 
 // 8-wind facing (0=E 1=SE 2=S 3=SW 4=W 5=NW 6=N 7=NE) onto stored art + mirror.
-// Players store N,S,E,NE,SE; zombies store N,S,E (diagonals fold onto E/W).
+// Players store N,S,E,NE,SE (W side mirrored); zombies store N,S,E folded by
+// halves (northbound shows N, southbound S, pure E/W the profile).
 const uint16_t* render::_player_img(uint8_t p, uint8_t d, bool& flip) {
   flip = (d == 3 || d == 4 || d == 5); // SW/W/NW mirror SE/E/NE
   const uint8_t base = (d == 3) ? 1 : (d == 4) ? 0 : (d == 5) ? 7 : d;
@@ -334,10 +335,12 @@ const uint16_t* render::_player_img(uint8_t p, uint8_t d, bool& flip) {
 }
 
 const uint16_t* render::_zombie_img(sim::actor_kind k, uint8_t d, bool& flip) {
-  const bool west = (d == 3 || d == 4 || d == 5);
-  flip = west;
-  const bool north = (d == 6);
-  const bool south = (d == 2);
+  // 3-art fold by halves: northbound (5,6,7) shows N, southbound (1,2,3)
+  // shows S, pure E/W keep the profile (W mirrored). Jitter inside a half
+  // paints the same art, so straight chases never mirror-blink.
+  flip = (d == 4); // pure west only
+  const bool south = (d == 1 || d == 2 || d == 3);
+  const bool north = (d == 5 || d == 6 || d == 7);
   if (k == sim::actor_kind::runner) {
     if (north) {
       return zombie_runner_n;
