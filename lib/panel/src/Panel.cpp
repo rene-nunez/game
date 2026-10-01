@@ -12,6 +12,11 @@ int16_t panel::_mm_py[2 + sim::MAX_ZOMBIES] = {0};
 uint8_t panel::_mm_n = 0;
 int16_t panel::_mm_ctx = -1; // camera cell tile whose frame is on the minimap, -1 = none yet
 int16_t panel::_mm_cty = -1;
+// stats cache: draw() only repaints when a value changes, blips() stays per-frame
+static uint32_t _cache_points = 0xFFFFFFFF;
+static uint8_t _cache_hp0 = 0xFF, _cache_hp1 = 0xFF, _cache_bleed0 = 0xFF, _cache_bleed1 = 0xFF;
+static uint8_t _cache_dmg = 0xFF, _cache_spd = 0xFF;
+static uint8_t _cache_p2 = 0xFF, _cache_down0 = 0xFF, _cache_down1 = 0xFF;
 
 int16_t panel::_mm_x() {
   return (int16_t)display::width() - _mm_w - _mm_gap;
@@ -21,6 +26,9 @@ void panel::init() {
   const int16_t mx = _mm_x();
   _mm_ctx = -1; // the base repaint wipes the frame and the blips
   _mm_n = 0;
+  _cache_points = 0xFFFFFFFF; // force the next draw() to repaint every row
+  _cache_hp0 = _cache_hp1 = _cache_bleed0 = _cache_bleed1 = 0xFF;
+  _cache_dmg = _cache_spd = _cache_p2 = _cache_down0 = _cache_down1 = 0xFF;
   display::fill_rect(0, render::ARENA_BOTTOM, (int16_t)display::width(), _panel_h, colour::black);
 
   for (uint8_t r = 0; r < tilemap::ROWS; ++r) { // minimap terrain, same-colour runs
@@ -57,7 +65,29 @@ void panel::draw() {
   // stats live left of the minimap; wave/kills and the gun moved to the 10px HUD, so this
   // keeps POINTS big plus the pip rows with room to breathe. Every row is cleared first:
   // numbers shrink and overpainting alone would leave ghost digits behind.
+  // cached: POINTS/HP/DMG/SPD only change on kills/buys/hits, so most frames skip here
+  // entirely (blips() still runs per frame). init() invalidates the cache.
   const sim::state& v = sim::view();
+  const uint8_t p2 = v.players[1].active ? 1 : 0;
+  const uint8_t down0 = v.players[0].downed ? 1 : 0;
+  const uint8_t down1 = v.players[1].downed ? 1 : 0;
+  if (v.points == _cache_points && v.players[0].hp == _cache_hp0 &&
+      v.players[1].hp == _cache_hp1 && v.players[0].bleed == _cache_bleed0 &&
+      v.players[1].bleed == _cache_bleed1 && v.dmg_lvl == _cache_dmg &&
+      v.spd_lvl == _cache_spd && p2 == _cache_p2 && down0 == _cache_down0 &&
+      down1 == _cache_down1) {
+    return;
+  }
+  _cache_points = v.points;
+  _cache_hp0 = v.players[0].hp;
+  _cache_hp1 = v.players[1].hp;
+  _cache_bleed0 = v.players[0].bleed;
+  _cache_bleed1 = v.players[1].bleed;
+  _cache_dmg = v.dmg_lvl;
+  _cache_spd = v.spd_lvl;
+  _cache_p2 = p2;
+  _cache_down0 = down0;
+  _cache_down1 = down1;
   const int16_t mx = _mm_x();
   char buf[32];
 
@@ -66,7 +96,6 @@ void panel::draw() {
   display::text(buf, 4, render::ARENA_BOTTOM + 4, colour::yellow, 2);
 
   // co-op squeezes the rows (9px pitch) to fit the second HP line; solo keeps 12px
-  const bool p2 = v.players[1].active;
   const int16_t hp_y = render::ARENA_BOTTOM + (p2 ? 22 : 24);
   const int16_t pitch = p2 ? 9 : 12;
   const int16_t tail_y = hp_y + (p2 ? 18 : 12); // DMG row (HP, [+H2,] then DMG/SPD/status)

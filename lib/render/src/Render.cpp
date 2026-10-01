@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <cstdio>
+#include <pgmspace.h>
 
 #include <Display.h>
 #include <map.h>
@@ -7,6 +8,122 @@
 #include <sprites.h>
 
 #include "Render.h"
+
+// Opaque bbox per art array, scanned once from PROGMEM: erase only repaints what draw
+// could have painted (transparent margins are never touched). The 32px boss is mostly
+// air, so this cuts its erase to the body. Cached by pointer (19 arts, one scan each).
+struct _bbox {
+  const uint16_t* img;
+  uint8_t art;
+  uint8_t x0, y0, w, h;
+};
+static _bbox _bbox_cache[24];
+static uint8_t _bbox_n = 0;
+
+// bbox of img (mirrored on x when flip, matching draw_sprite_hflip). Full rect when the
+// cache overflows (never: 19 arts). Empty art (never) yields w=h=0: caller skips.
+static void _art_bbox(const uint16_t* img, uint8_t art, bool flip, uint8_t& x0, uint8_t& y0,
+                      uint8_t& w, uint8_t& h) {
+  const _bbox* b = nullptr;
+  for (uint8_t i = 0; i < _bbox_n; ++i) {
+    if (_bbox_cache[i].img == img && _bbox_cache[i].art == art) {
+      b = &_bbox_cache[i];
+      break;
+    }
+  }
+  if (b == nullptr) {
+    uint8_t ox0 = art, oy0 = art, ox1 = 0, oy1 = 0;
+    bool any = false;
+    for (uint8_t r = 0; r < art; ++r) {
+      for (uint8_t c = 0; c < art; ++c) {
+        if (pgm_read_word(img + (uint16_t)r * art + c) != 0x0000) {
+          if (!any || c < ox0) {
+            ox0 = c;
+          }
+          if (!any || c > ox1) {
+            ox1 = c;
+          }
+          if (!any || r < oy0) {
+            oy0 = r;
+          }
+          if (!any || r > oy1) {
+            oy1 = r;
+          }
+          any = true;
+        }
+      }
+    }
+    uint8_t bw = 0, bh = 0;
+    if (any) {
+      bw = (uint8_t)(ox1 - ox0 + 1);
+      bh = (uint8_t)(oy1 - oy0 + 1);
+    } else {
+      ox0 = oy0 = 0;
+    }
+    if (_bbox_n < 24) {
+      _bbox_cache[_bbox_n] = {img, art, ox0, oy0, bw, bh};
+      b = &_bbox_cache[_bbox_n++];
+    } else {
+      x0 = y0 = 0; // overflow fallback (never): full rect, always correct
+      w = h = art;
+      return;
+    }
+  }
+  x0 = b->x0;
+  y0 = b->y0;
+  w = b->w;
+  h = b->h;
+  if (flip && w > 0) {
+    x0 = (uint8_t)(art - x0 - w); // mirror of [x0,x0+w) under hflip
+  }
+}
+
+// One-frame blit buffer (32x32 max actor): terrain + sprite composite in RAM, then a
+// single SPI burst. Replaces hundreds of tiny fillRect runs (each a setup + a scan race
+// = partial "cut" sprite) with one atomic push. Transparency resolves against the
+// tilemap, exactly like the old run path (0x0000 = see-through).
+static uint16_t _blit_buf[32 * 32];
+
+// terrain-only push of a world rect (actor erase). Same pixels as _erase_world_area,
+// one burst instead of per-run fills.
+static void _erase_box(int16_t wx, int16_t wy, int16_t w, int16_t h) {
+  if (w <= 0 || h <= 0) {
+    return;
+  }
+  const int16_t sw = (int16_t)display::width();
+  int16_t sy0 = wy - render::cam_y() + render::HUD_H;
+  int16_t x0 = wx, y0 = wy, bw = w, bh = h;
+  if (sy0 < render::HUD_H) { // clip to the arena, like _fill_world_run
+    const int16_t cut = render::HUD_H - sy0;
+    y0 += cut;
+    bh -= cut;
+    sy0 = render::HUD_H;
+  }
+  if (sy0 + bh > render::ARENA_BOTTOM) {
+    bh = render::ARENA_BOTTOM - sy0;
+  }
+  if (bh <= 0) {
+    return;
+  }
+  int16_t sx0 = x0 - render::cam_x();
+  if (sx0 < 0) {
+    x0 -= sx0;
+    bw += sx0;
+    sx0 = 0;
+  }
+  if (sx0 + bw > sw) {
+    bw = sw - sx0;
+  }
+  if (bw <= 0) {
+    return;
+  }
+  for (int16_t r = 0; r < bh; ++r) {
+    for (int16_t c = 0; c < bw; ++c) {
+      _blit_buf[(uint16_t)r * bw + c] = tilemap::color_at(x0 + c, y0 + r);
+    }
+  }
+  display::push_image(sx0, sy0, bw, bh, _blit_buf);
+}
 
 int16_t render::_cam_x = 0;
 int16_t render::_cam_y = 0;
@@ -27,7 +144,9 @@ int16_t render::cam_y() {
 }
 
 void render::repaint() {
-  display::fill_rect(0, 0, (int16_t)display::width(), HUD_H, colour::black); // hud strip
+  // NOTE: HUD strip (0..HUD_H) belongs to game::_draw_hud (cached): a camera cut must
+  // not wipe it, or the cache would skip and leave it black. Menu->playing transitions
+  // force a full HUD repaint via game (which wipes + repaints all fields itself).
   _paint_y = 0; // the arena repaint runs from here, PAINT_CHUNK rows per frame
 }
 
@@ -172,18 +291,36 @@ void render::clear() {
   const sim::state& v = sim::view();
   for (uint8_t p = 0; p < sim::NUM_PLAYERS; ++p) {
     if (v.players[p].active) {
-      // erase the sprite rect, not the hitbox: draw() paints centred art
-      _erase_world_rect(_sprite_tl((int16_t)v.players[p].x, sim::PLAYER_SIZE, SPRITE),
-                        _sprite_tl((int16_t)v.players[p].y, sim::PLAYER_SIZE, SPRITE),
-                        SPRITE);
+      const int16_t tlx = _sprite_tl((int16_t)v.players[p].x, sim::PLAYER_SIZE, SPRITE);
+      const int16_t tly = _sprite_tl((int16_t)v.players[p].y, sim::PLAYER_SIZE, SPRITE);
+      if (v.players[p].downed) {
+        // full rect: the yellow rescue frame sits at the sprite edges, outside the bbox
+        _erase_box(tlx, tly, SPRITE, SPRITE);
+        continue;
+      }
+      // erase the opaque bbox, not the full art: draw() never paints the margins
+      bool flip = false;
+      const uint16_t* img = _player_img(p, v.players[p].facing & 7, flip);
+      uint8_t bx0, by0, bw, bh;
+      _art_bbox(img, SPRITE, flip, bx0, by0, bw, bh);
+      if (bw > 0 && bh > 0) {
+        _erase_box(tlx + bx0, tly + by0, bw, bh);
+      }
     }
   }
   for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
     if (v.zombies[i].active) {
       const uint8_t art =
           (v.zombies[i].kind == sim::actor_kind::boss) ? BOSS_ART : SPRITE;
-      _erase_world_rect(_sprite_tl((int16_t)v.zombies[i].x, sim::ZOMBIE_SIZE, art),
-                        _sprite_tl((int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE, art), art);
+      const int16_t tlx = _sprite_tl((int16_t)v.zombies[i].x, sim::ZOMBIE_SIZE, art);
+      const int16_t tly = _sprite_tl((int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE, art);
+      bool flip = false;
+      const uint16_t* img = _zombie_img(v.zombies[i].kind, v.zombies[i].facing & 7, flip);
+      uint8_t bx0, by0, bw, bh;
+      _art_bbox(img, art, flip, bx0, by0, bw, bh);
+      if (bw > 0 && bh > 0) {
+        _erase_box(tlx + bx0, tly + by0, bw, bh);
+      }
     }
   }
   for (uint8_t i = 0; i < sim::MAX_BULLETS; ++i) {
@@ -202,6 +339,17 @@ void render::clear() {
 // Drawn every frame after the terrain, erased via the tilemap like sprites. The
 // erase always covers the widest tag (8 chars): a buy can shrink the text and a
 // tight erase would strand the old pixels for a frame.
+// shop tag anchors are world-fixed (machines parse once from constexpr _art), so the
+// 60x30 scan runs once and every frame reuses the 4 cached centres. Saves ~14k tile
+// reads/frame (_shop_labels runs in clear() + draw()).
+struct _tag_anchor {
+  int16_t cx; // block centre, world px
+  int16_t wy; // tag top, world px (8px glyph + 2px gap above the block)
+  bool found;
+};
+static _tag_anchor _tag_anchors[4];
+static bool _tag_anchors_done = false;
+
 void render::_shop_labels(bool erase) {
   struct _tag {
     uint8_t tile;
@@ -228,43 +376,58 @@ void render::_shop_labels(bool erase) {
       {tilemap::V_SPD, spd_buf, colour::cyan},
       {tilemap::ROULETTE, "ROLL 100", colour::yellow},
   };
-  for (uint8_t ti = 0; ti < 4; ++ti) {
-    const uint8_t want = tags[ti].tile;
-    for (uint8_t r = 0; r < tilemap::ROWS; ++r) {
-      for (uint8_t c = 0; c < tilemap::COLS; ++c) {
-        if (tilemap::tiles[r][c] != want) {
-          continue;
+  if (!_tag_anchors_done) {
+    _tag_anchors_done = true;
+    for (uint8_t i = 0; i < 4; ++i) {
+      _tag_anchors[i].found = false;
+    }
+    for (uint8_t ti = 0; ti < 4; ++ti) {
+      const uint8_t want = tags[ti].tile;
+      for (uint8_t r = 0; r < tilemap::ROWS && !_tag_anchors[ti].found; ++r) {
+        for (uint8_t c = 0; c < tilemap::COLS; ++c) {
+          if (tilemap::tiles[r][c] != want) {
+            continue;
+          }
+          // top-left tile of the 2x2 block only, so the tag paints once per machine
+          if (c > 0 && tilemap::tiles[r][c - 1] == want) {
+            continue;
+          }
+          if (r > 0 && tilemap::tiles[r - 1][c] == want) {
+            continue;
+          }
+          _tag_anchors[ti].cx = (int16_t)c * tilemap::TILE + tilemap::TILE;
+          _tag_anchors[ti].wy = (int16_t)r * tilemap::TILE - 10; // 8px glyph + 2px gap
+          _tag_anchors[ti].found = true;
+          break;
         }
-        // top-left tile of the 2x2 block only, so the tag paints once per machine
-        if (c > 0 && tilemap::tiles[r][c - 1] == want) {
-          continue;
-        }
-        if (r > 0 && tilemap::tiles[r - 1][c] == want) {
-          continue;
-        }
-        uint8_t len = 0;
-        while (tags[ti].text[len] != '\0') {
-          ++len;
-        }
-        // the block centre never moves, so erase and draw share it; only the
-        // width differs (erase always covers the widest tag, see above)
-        const int16_t cx = (int16_t)c * tilemap::TILE + tilemap::TILE;
-        const int16_t wy = (int16_t)r * tilemap::TILE - 10; // 8px glyph + 2px gap
-        if (erase) {
-          _erase_world_area(cx - _tag_max_w / 2, wy, _tag_max_w, 8);
-          continue;
-        }
-        const int16_t tw = (int16_t)len * 6; // size-1 glyphs are 6px wide
-        const int16_t wx = cx - tw / 2;
-        const int16_t sx = wx - _cam_x;
-        const int16_t sy = wy - _cam_y + HUD_H;
-        if (sx < 0 || sy < HUD_H || sx + tw > (int16_t)display::width() ||
-            sy + 8 > ARENA_BOTTOM) {
-          continue; // partially off-arena: skip rather than bleed into hud/panel
-        }
-        display::text(tags[ti].text, sx, sy, tags[ti].col, 1);
       }
     }
+  }
+  for (uint8_t ti = 0; ti < 4; ++ti) {
+    if (!_tag_anchors[ti].found) {
+      continue;
+    }
+    uint8_t len = 0;
+    while (tags[ti].text[len] != '\0') {
+      ++len;
+    }
+    // the block centre never moves, so erase and draw share it; only the
+    // width differs (erase always covers the widest tag, see above)
+    const int16_t cx = _tag_anchors[ti].cx;
+    const int16_t wy = _tag_anchors[ti].wy;
+    if (erase) {
+      _erase_world_area(cx - _tag_max_w / 2, wy, _tag_max_w, 8);
+      continue;
+    }
+    const int16_t tw = (int16_t)len * 6; // size-1 glyphs are 6px wide
+    const int16_t wx = cx - tw / 2;
+    const int16_t sx = wx - _cam_x;
+    const int16_t sy = wy - _cam_y + HUD_H;
+    if (sx < 0 || sy < HUD_H || sx + tw > (int16_t)display::width() ||
+        sy + 8 > ARENA_BOTTOM) {
+      continue; // partially off-arena: skip rather than bleed into hud/panel
+    }
+    display::text(tags[ti].text, sx, sy, tags[ti].col, 1);
   }
 }
 
@@ -277,8 +440,10 @@ void render::_draw_actor(int16_t ex, int16_t ey, uint8_t hitbox, uint8_t art,
                          const uint16_t* img, bool flip) {
   // world -> screen, like _fill_world_box: the erase path maps the same way, so a
   // missing offset here paints where the erase never cleans (10px-high ghost band).
-  const int16_t sx = _sprite_tl(ex, hitbox, art) - _cam_x;
-  const int16_t sy = _sprite_tl(ey, hitbox, art) - _cam_y + HUD_H;
+  const int16_t wtlx = _sprite_tl(ex, hitbox, art);
+  const int16_t wtly = _sprite_tl(ey, hitbox, art);
+  const int16_t sx = wtlx - _cam_x;
+  const int16_t sy = wtly - _cam_y + HUD_H;
   int16_t r0 = 0;
   int16_t r1 = (int16_t)art - 1;
   if (sy < HUD_H) {
@@ -290,11 +455,30 @@ void render::_draw_actor(int16_t ex, int16_t ey, uint8_t hitbox, uint8_t art,
   if (r0 > r1) {
     return;
   }
-  if (flip) {
-    display::draw_sprite_hflip(sx, sy + r0, art, (uint8_t)(r1 - r0 + 1), img + r0 * art);
-  } else {
-    display::draw_sprite(sx, sy + r0, art, (uint8_t)(r1 - r0 + 1), img + r0 * art);
+  const int16_t sw = (int16_t)display::width();
+  int16_t c0 = 0, c1 = (int16_t)art;
+  if (sx < 0) {
+    c0 = -sx;
   }
+  if (sx + c1 > sw) {
+    c1 = sw - sx;
+  }
+  if (c0 >= c1) {
+    return;
+  }
+  // composite in RAM (terrain under transparent pixels), one atomic SPI burst.
+  const int16_t w = c1 - c0, h = r1 - r0 + 1;
+  for (int16_t row = 0; row < h; ++row) {
+    const int16_t wy = wtly + r0 + row;
+    const uint16_t* sprow = img + (uint16_t)(r0 + row) * art;
+    for (int16_t cc = c0; cc < c1; ++cc) {
+      const uint16_t c =
+          pgm_read_word(sprow + (uint16_t)(flip ? (art - 1 - cc) : cc));
+      _blit_buf[(uint16_t)row * w + (uint16_t)(cc - c0)] =
+          (c != 0x0000) ? c : tilemap::color_at(wtlx + cc, wy);
+    }
+  }
+  display::push_image(sx + c0, sy + r0, w, h, _blit_buf);
 }
 
 void render::_frame_box(int16_t sx, int16_t sy, uint16_t col) {
@@ -410,6 +594,8 @@ void render::draw() {
     }
   }
   _shop_labels(false);
+  // prompt last, on top by design: a 32px boss walking behind the bottom strip is
+  // covered there (reads as "cut"). Reordering would let the sprite bleed over UI text.
   if (_prompt != nullptr && _prompt[0] != '\0') {
     uint8_t len = 0;
     while (_prompt[len] != '\0') {

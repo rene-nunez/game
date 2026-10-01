@@ -57,6 +57,9 @@ uint32_t game::_intro_ms0 = 0;
 screens::id game::_scr = screens::id::logo;
 uint8_t game::_sel = 0;
 int8_t game::_nav_dir = 0;
+uint8_t game::_hud_wave = 0xFF, game::_hud_kills = 0xFF, game::_hud_role = 0xFF;
+sim::weapon game::_hud_gun = (sim::weapon)0xFF;
+bool game::_hud_first = true;
 
 bool game::begin(uint8_t role) {
   Serial.begin(115200);
@@ -200,6 +203,7 @@ void game::_start_game(bool multi) {
   _hint_until = 0;
   _hint_buf[0] = '\0';
   panel::init(); // static panel + minimap terrain, then blips on top
+  _hud_first = true; // the menu chrome covered the HUD strip: wipe+repaint it fully
   render::update_camera();
   render::repaint(); // forced: the game over screen cleared the arena and the camera may not move
   _scr = screens::id::playing;
@@ -680,7 +684,7 @@ void game::_update_playing_host() {
   render::draw();
   panel::draw();
   panel::blips();
-  _draw_hud(); // wave/kills + gun + role, every frame with clears (values shrink)
+  _draw_hud(); // wave/kills + gun + role, cached (repaints only on change)
   if (_net_multi) {
     _broadcast(); // ~30Hz state to the client, right after the frame simmed
   }
@@ -700,7 +704,7 @@ void game::_update_playing_client() {
     // exactly like the host resume path (progressive terrain over the next 2 frames).
     _cli_mirror = false;
     screens::invalidate(); // the next pause must repaint its chrome
-    panel::init();         // the pause menu covered the panel and the minimap
+    panel::init(); _hud_first = true;         // the pause menu covered the panel and the minimap
     render::repaint();     // clear leftover pause menu
   }
 
@@ -756,8 +760,25 @@ void game::_draw_hud() {
   // the 10px strip is net+sim state, not renderer state, so game paints it: wave/kills
   // left, gun centred, role badge right. Every field is cleared first (K12 -> K9 and
   // SHOTGUN -> SMG shrink, overpainting alone would leave ghost digits behind).
+  // cached: wave/kills/gun/role barely change, so most frames skip all three
+  // fill+text pairs (~2.6ms). _hud_first forces a full-strip wipe + repaint after
+  // menu chrome covered the strip (render::repaint no longer wipes it, so camera
+  // cuts never dirty the cache).
   const sim::state& v = sim::view();
+  const uint8_t role = !_net_multi ? 0 : (_handler.role() == ROLE_HOST ? 1 : 2);
+  if (!_hud_first && v.wave == _hud_wave && v.kills == _hud_kills && v.gun == _hud_gun &&
+      role == _hud_role) {
+    return;
+  }
+  _hud_wave = v.wave;
+  _hud_kills = v.kills;
+  _hud_gun = v.gun;
+  _hud_role = role;
   const int16_t sw = (int16_t)display::width();
+  if (_hud_first) {
+    _hud_first = false;
+    display::fill_rect(0, 0, sw, render::HUD_H, colour::black); // menu leftovers, incl. gaps
+  }
   char buf[24];
 
   display::fill_rect(0, 0, 124, 8, colour::black);
@@ -819,7 +840,7 @@ void game::_mirror_pause() {
     // host resumed or restarted: rebuild the arena chrome like the host resume path
     _cli_mirror = false;
     screens::invalidate(); // the next pause must repaint its chrome
-    panel::init();         // the pause menu covered the panel and the minimap
+    panel::init(); _hud_first = true;         // the pause menu covered the panel and the minimap
     render::repaint();     // clear leftover pause menu
     return;
   }
@@ -850,7 +871,7 @@ void game::_update_pause() {
     _p2_pause_edge = false;
     _scr = screens::id::playing;
     screens::invalidate(); // the next pause must repaint its chrome
-    panel::init(); // the pause menu covered the panel and the minimap
+    panel::init(); _hud_first = true; // the pause menu covered the panel and the minimap
     render::repaint(); // clear leftover pause menu
   } else if (input::fire_pressed()) {
     buzz::play(buzz::jingle::menu);
@@ -858,7 +879,7 @@ void game::_update_pause() {
       case 0: // Continue
         _scr = screens::id::playing;
         screens::invalidate(); // the next pause must repaint its chrome
-        panel::init(); // the pause menu covered the panel and the minimap
+        panel::init(); _hud_first = true; // the pause menu covered the panel and the minimap
         render::repaint(); // clear leftover pause menu
         break;
       case 1: // Restart

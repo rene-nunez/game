@@ -51,9 +51,19 @@ void display::backlight(bool on) {
 }
 
 void display::draw_sprite(int16_t x, int16_t y, uint8_t w, uint8_t h, const uint16_t* data) {
-  // same-colour runs straight to the glass; fillRect clips off-arena rows itself
+  // same-colour runs straight to the glass; X-clipped here so erase (which clips to
+  // [0,width)) and draw agree pixel-for-pixel at the screen edges. Fully off-screen
+  // rows/cols skip SPI entirely (matters for the 32px boss overhang, 13px per side).
+  const int16_t sw = _tft.width();
+  const int16_t sh = _tft.height();
+  if (x + (int16_t)w <= 0 || x >= sw) {
+    return; // whole sprite off-viewport: no reads, no writes
+  }
   for (uint8_t row = 0; row < h; ++row) {
     const int16_t sy = y + (int16_t)row;
+    if (sy < 0 || sy >= sh) {
+      continue;
+    }
     int16_t run_x = -1;
     uint16_t run_col = 0;
     for (uint8_t col = 0; col <= w; ++col) {
@@ -62,7 +72,16 @@ void display::draw_sprite(int16_t x, int16_t y, uint8_t w, uint8_t h, const uint
         continue; // same colour extends (the transparent sentinel always flushes)
       }
       if (run_x >= 0) {
-        _tft.fillRect(x + run_x, sy, (int16_t)col - run_x, 1, run_col);
+        int16_t rx0 = x + run_x, rx1 = x + (int16_t)col;
+        if (rx1 > 0 && rx0 < sw) {
+          if (rx0 < 0) {
+            rx0 = 0;
+          }
+          if (rx1 > sw) {
+            rx1 = sw;
+          }
+          _tft.fillRect(rx0, sy, rx1 - rx0, 1, run_col);
+        }
       }
       if (c != 0x0000) {
         run_x = (int16_t)col;
@@ -77,8 +96,16 @@ void display::draw_sprite(int16_t x, int16_t y, uint8_t w, uint8_t h, const uint
 void display::draw_sprite_hflip(int16_t x, int16_t y, uint8_t w, uint8_t h,
                                 const uint16_t* data) {
   // same run-length encoding as draw_sprite, reading each row right-to-left
+  const int16_t sw = _tft.width();
+  const int16_t sh = _tft.height();
+  if (x + (int16_t)w <= 0 || x >= sw) {
+    return;
+  }
   for (uint8_t row = 0; row < h; ++row) {
     const int16_t sy = y + (int16_t)row;
+    if (sy < 0 || sy >= sh) {
+      continue;
+    }
     int16_t run_x = -1;
     uint16_t run_col = 0;
     for (uint8_t col = 0; col <= w; ++col) {
@@ -89,7 +116,16 @@ void display::draw_sprite_hflip(int16_t x, int16_t y, uint8_t w, uint8_t h,
         continue; // same colour extends (the transparent sentinel always flushes)
       }
       if (run_x >= 0) {
-        _tft.fillRect(x + run_x, sy, (int16_t)col - run_x, 1, run_col);
+        int16_t rx0 = x + run_x, rx1 = x + (int16_t)col;
+        if (rx1 > 0 && rx0 < sw) {
+          if (rx0 < 0) {
+            rx0 = 0;
+          }
+          if (rx1 > sw) {
+            rx1 = sw;
+          }
+          _tft.fillRect(rx0, sy, rx1 - rx0, 1, run_col);
+        }
       }
       if (c != 0x0000) {
         run_x = (int16_t)col;
@@ -99,6 +135,13 @@ void display::draw_sprite_hflip(int16_t x, int16_t y, uint8_t w, uint8_t h,
       }
     }
   }
+}
+
+void display::push_image(int16_t x, int16_t y, int16_t w, int16_t h, const uint16_t* data) {
+  if (w <= 0 || h <= 0) {
+    return;
+  }
+  _tft.pushImage(x, y, (int32_t)w, (int32_t)h, (uint16_t*)data);
 }
 
 uint16_t display::rgb565(uint8_t r, uint8_t g, uint8_t b) {

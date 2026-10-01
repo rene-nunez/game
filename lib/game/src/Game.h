@@ -92,6 +92,9 @@ class game {
     static void _send_input();            // ship sticks/buttons (client, every frame)
     static void _mirror_pause(); // host-owned pause chrome on the client (screen-driven)
     static void _draw_hud();     // 10px strip: W/K left, gun centre, role badge right
+    static uint8_t _hud_wave, _hud_kills, _hud_role; // last painted HUD (cache: skip if same)
+    static sim::weapon _hud_gun;
+    static bool _hud_first; // force full wipe+repaint (menu chrome covered the strip)
     static bool _boss_alive();   // any active boss in the sim view (both boards mirror it)
     static void _update_pause();
     static void _update_game_over();
