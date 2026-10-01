@@ -35,11 +35,15 @@ namespace net {
   // zombie/bullet flags packing
   constexpr uint8_t ZF_ACTIVE = 0x01;
   constexpr uint8_t ZF_KIND_SHIFT = 1; // 2 bits: actor_kind as u8
+  constexpr uint8_t ZF_DIR_SHIFT = 3; // 3 bits: sim 8-wind facing (bits 3..5)
+  constexpr uint8_t ZF_DIR_MASK = 0x07;
   constexpr uint8_t BF_ACTIVE = 0x01;
   constexpr uint8_t BF_DMG_SHIFT = 1; // 5 bits: bullet dmg (bits 1..5, 6..7 reserved)
 
   constexpr uint8_t PF_ACTIVE = 0x01;
   constexpr uint8_t PF_DOWNED = 0x02; // bleeding out, needs a revive
+  constexpr uint8_t PF_DIR_SHIFT = 2; // 3 bits: sim 8-wind facing (bits 2..4)
+  constexpr uint8_t PF_DIR_MASK = 0x07;
 
   struct __attribute__((packed)) net_player {
     uint16_t x, y; // world px * 4 (0.25px steps; 960*4 < 2^16)

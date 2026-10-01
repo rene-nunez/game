@@ -48,12 +48,17 @@ class sim {
     static constexpr uint32_t PRICE_ROLL = 100; // roulette: random weapon
     static constexpr uint32_t LVL_PRICE_STEP = 200; // extra cost per level owned
 
+    // facing: 8-wind sector from dir_of(), 0=E 1=SE 2=S 3=SW 4=W 5=NW 6=N 7=NE
+    // (+y is south on the glass). Render folds it onto the stored art + hflip.
+    static uint8_t dir_of(float dx, float dy);
+
     struct player_state {
       float x, y;
       uint8_t hp; // 0 = down or dead
       bool active; // false = no second player (Solo)
       bool downed; // bleeding out: revive, don't respawn
       uint8_t bleed; // seconds left while downed
+      uint8_t facing; // 8-wind dir above, move-driven, aim overrides on fire
     };
 
     // remote control for player 1, fed by game from the net each frame. Edges, not
@@ -71,6 +76,7 @@ class sim {
         uint8_t hp;
         bool active;
         actor_kind kind;
+        uint8_t facing; // 8-wind dir above, set by the steer
       };
       struct shot {
         float x, y, vx, vy;
@@ -135,6 +141,8 @@ class sim {
     // damage cooldowns and the tiles the BFS fields were last built for are not peer state
     static state _s;
     static uint32_t _last_ms, _last_damage[NUM_PLAYERS], _last_shot[NUM_PLAYERS];
+    static uint32_t _last_aim[NUM_PLAYERS]; // last fire time: aim holds facing briefly
+    static constexpr uint32_t AIM_HOLD_MS = 500;
     static uint32_t _bleed_acc[NUM_PLAYERS]; // ms banked toward the next bleed tick
     static int16_t _path_tx[NUM_PLAYERS], _path_ty[NUM_PLAYERS];
     static ctl _p2ctl;

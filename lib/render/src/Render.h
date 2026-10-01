@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include <Sim.h>
+
 // The arena view: camera, the incremental terrain repaint and the entity boxes. It reads the
 // simulation and nothing else, so what it paints is a function of sim state plus geometry.
 // The panel sits next to it and needs the arena origin and the camera, hence those are public.
@@ -37,7 +39,10 @@ class render {
     static int16_t _cell_cam(int16_t p, int16_t step, int16_t max_cam);
     static int16_t _sprite_tl(int16_t e, uint8_t size); // 16px art centred on an size-px hitbox
     static void _draw_actor(int16_t ex, int16_t ey, uint8_t size,
-                            const uint16_t* img); // centred sprite
+                            const uint16_t* img, bool flip); // centred sprite, opt. mirror
+    // facing (sim 8-wind) -> stored art + mirror: players N,S,E,NE,SE; zombies N,S,E
+    static const uint16_t* _player_img(uint8_t p, uint8_t d, bool& flip);
+    static const uint16_t* _zombie_img(sim::actor_kind k, uint8_t d, bool& flip);
     static void _frame_box(int16_t sx, int16_t sy, uint16_t col); // 1px frame, downed rescue
     static void _fill_world_run(int16_t wx, int16_t sy, int16_t w, uint16_t col);
     static void _erase_world_rect(int16_t wx, int16_t wy, uint8_t size);

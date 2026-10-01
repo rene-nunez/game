@@ -13,6 +13,7 @@ uint32_t sim::_last_damage[sim::NUM_PLAYERS] = {0, 0};
 uint32_t sim::_bleed_acc[sim::NUM_PLAYERS] = {0, 0};
 int16_t sim::_path_tx[sim::NUM_PLAYERS] = {-1, -1};
 int16_t sim::_path_ty[sim::NUM_PLAYERS] = {-1, -1};
+uint32_t sim::_last_aim[sim::NUM_PLAYERS] = {0, 0};
 sim::ctl sim::_p2ctl = {};
 
 constexpr int8_t sim::nbr_x[8];
@@ -31,6 +32,7 @@ void sim::reset() {
   _s.spd_lvl = 0;
   _s.last_event = event::none;
   _last_shot[0] = _last_shot[1] = 0;
+  _last_aim[0] = _last_aim[1] = 0;
   _last_damage[0] = _last_damage[1] = 0;
   _bleed_acc[0] = _bleed_acc[1] = 0;
   _p2ctl = {};
@@ -42,8 +44,10 @@ void sim::reset() {
       true,
       false,
       0,
+      2, // face south at spawn
   };
-  _s.players[1] = {_s.players[0].x, _s.players[0].y, 0, false, false, 0}; // Solo: no peer yet
+  _s.players[1] = {_s.players[0].x, _s.players[0].y, 0, false, false, 0,
+                   2}; // Solo: no peer yet
 
   _path_tx[0] = _path_tx[1] = -1; // force fresh fields at the new spawn
   _path_ty[0] = _path_ty[1] = -1;
@@ -93,8 +97,15 @@ void sim::_respawn(uint8_t p) {
   _s.players[p].hp = PLAYER_HP_MAX;
   _s.players[p].downed = false;
   _s.players[p].bleed = 0;
+  _s.players[p].facing = 2;
   _bleed_acc[p] = 0;
   _last_damage[p] = 0;
+}
+
+uint8_t sim::dir_of(float dx, float dy) {
+  // screen coords (+y south): 0=E 1=SE 2=S 3=SW 4=W 5=NW 6=N 7=NE
+  const float a = atan2f(dy, dx) * 57.29578f; // -180..180
+  return (uint8_t)(((int)(a + 360.0f + 22.5f) / 45) & 7);
 }
 
 void sim::_move_entity(float& x, float& y, float dx, float dy, uint8_t size) {
@@ -116,6 +127,7 @@ bool sim::_step_zombie(uint8_t z, float ddx, float ddy, float dt) {
   if (d <= 0.5f) {
     return false;
   }
+  _s.zombies[z].facing = dir_of(ddx, ddy);
   const float spd = _zombie_speed(_s.zombies[z].kind);
   const float bx = _s.zombies[z].x, by = _s.zombies[z].y;
   // _move_entity takes references, so it has to get the real members, not copies
@@ -244,7 +256,7 @@ void sim::_spawn_wave() {
       if (close && k + 1 < total) {
         continue; // too close to a player, keep looking
       }
-      _s.zombies[i] = { x, y, _zombie_hp(kind, _s.wave), true, kind };
+      _s.zombies[i] = { x, y, _zombie_hp(kind, _s.wave), true, kind, 2 };
       break;
     }
   }
@@ -377,6 +389,8 @@ void sim::_do_fire(uint32_t now, uint8_t p) {
   const float len = sqrtf(dx * dx + dy * dy);
   dx /= len;
   dy /= len;
+  _s.players[p].facing = dir_of(dx, dy); // aim wins over the move dir
+  _last_aim[p] = now;
 
   const uint8_t dmg = _eff_dmg(_base_dmg(_s.gun), _s.dmg_lvl);
   uint8_t fired = 0;
@@ -415,6 +429,9 @@ bool sim::step(uint32_t now) {
     if (len > 1.0f) { // keep diagonal speed equal
       dx /= len;
       dy /= len;
+    }
+    if (len > 0.2f && now - _last_aim[p] > AIM_HOLD_MS) {
+      _s.players[p].facing = dir_of(dx, dy); // aim holds briefly after each shot
     }
 
     const float spd = player_speed * _spd_mult(_s.spd_lvl);
@@ -667,7 +684,8 @@ void sim::snapshot(net::game_state_msg& n) {
     n.players[p].y = net::qpos(_s.players[p].y);
     n.players[p].hp = _s.players[p].hp;
     n.players[p].flags = (_s.players[p].active ? net::PF_ACTIVE : 0) |
-                         (_s.players[p].downed ? net::PF_DOWNED : 0);
+                         (_s.players[p].downed ? net::PF_DOWNED : 0) |
+                         (uint8_t)((_s.players[p].facing & net::PF_DIR_MASK) << net::PF_DIR_SHIFT);
     n.players[p].bleed = _s.players[p].bleed;
   }
   n.wave = _s.wave;
@@ -682,7 +700,8 @@ void sim::snapshot(net::game_state_msg& n) {
     n.zombies[i].y = net::qpos(_s.zombies[i].y);
     n.zombies[i].hp = _s.zombies[i].hp;
     n.zombies[i].flags = (_s.zombies[i].active ? net::ZF_ACTIVE : 0) |
-                         (uint8_t)((uint8_t)_s.zombies[i].kind << net::ZF_KIND_SHIFT);
+                         (uint8_t)((uint8_t)_s.zombies[i].kind << net::ZF_KIND_SHIFT) |
+                         (uint8_t)((_s.zombies[i].facing & net::ZF_DIR_MASK) << net::ZF_DIR_SHIFT);
   }
   for (uint8_t i = 0; i < MAX_BULLETS; ++i) {
     n.bullets[i].x = net::qpos(_s.bullets[i].x);
@@ -700,6 +719,7 @@ void sim::apply_snapshot(const net::game_state_msg& n) {
     _s.players[p].hp = n.players[p].hp;
     _s.players[p].active = (n.players[p].flags & net::PF_ACTIVE) != 0;
     _s.players[p].downed = (n.players[p].flags & net::PF_DOWNED) != 0;
+    _s.players[p].facing = (uint8_t)((n.players[p].flags >> net::PF_DIR_SHIFT) & net::PF_DIR_MASK);
     _s.players[p].bleed = n.players[p].bleed;
   }
   _s.wave = n.wave;
@@ -715,6 +735,7 @@ void sim::apply_snapshot(const net::game_state_msg& n) {
     _s.zombies[i].hp = n.zombies[i].hp;
     _s.zombies[i].active = (n.zombies[i].flags & net::ZF_ACTIVE) != 0;
     _s.zombies[i].kind = (actor_kind)((n.zombies[i].flags >> net::ZF_KIND_SHIFT) & 0x03);
+    _s.zombies[i].facing = (uint8_t)((n.zombies[i].flags >> net::ZF_DIR_SHIFT) & net::ZF_DIR_MASK);
   }
   for (uint8_t i = 0; i < MAX_BULLETS; ++i) {
     _s.bullets[i].x = net::uqpos(n.bullets[i].x);

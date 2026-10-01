@@ -74,6 +74,33 @@ void display::draw_sprite(int16_t x, int16_t y, uint8_t w, uint8_t h, const uint
   }
 }
 
+void display::draw_sprite_hflip(int16_t x, int16_t y, uint8_t w, uint8_t h,
+                                const uint16_t* data) {
+  // same run-length encoding as draw_sprite, reading each row right-to-left
+  for (uint8_t row = 0; row < h; ++row) {
+    const int16_t sy = y + (int16_t)row;
+    int16_t run_x = -1;
+    uint16_t run_col = 0;
+    for (uint8_t col = 0; col <= w; ++col) {
+      const uint16_t c = (col < w)
+          ? pgm_read_word(data + (uint16_t)row * w + (uint16_t)(w - 1 - col))
+          : 0x0000;
+      if (run_x >= 0 && c == run_col) {
+        continue; // same colour extends (the transparent sentinel always flushes)
+      }
+      if (run_x >= 0) {
+        _tft.fillRect(x + run_x, sy, (int16_t)col - run_x, 1, run_col);
+      }
+      if (c != 0x0000) {
+        run_x = (int16_t)col;
+        run_col = c;
+      } else {
+        run_x = -1;
+      }
+    }
+  }
+}
+
 uint16_t display::rgb565(uint8_t r, uint8_t g, uint8_t b) {
   return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
 }

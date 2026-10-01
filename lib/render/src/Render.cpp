@@ -271,7 +271,8 @@ int16_t render::_sprite_tl(int16_t e, uint8_t size) {
   return e + ((int16_t)size - (int16_t)SPRITE) / 2;
 }
 
-void render::_draw_actor(int16_t ex, int16_t ey, uint8_t size, const uint16_t* img) {
+void render::_draw_actor(int16_t ex, int16_t ey, uint8_t size, const uint16_t* img,
+                         bool flip) {
   // world -> screen, like _fill_world_box: the erase path maps the same way, so a
   // missing offset here paints where the erase never cleans (10px-high ghost band).
   const int16_t sx = _sprite_tl(ex, size) - _cam_x;
@@ -287,7 +288,11 @@ void render::_draw_actor(int16_t ex, int16_t ey, uint8_t size, const uint16_t* i
   if (r0 > r1) {
     return;
   }
-  display::draw_sprite(sx, sy + r0, SPRITE, (uint8_t)(r1 - r0 + 1), img + r0 * SPRITE);
+  if (flip) {
+    display::draw_sprite_hflip(sx, sy + r0, SPRITE, (uint8_t)(r1 - r0 + 1), img + r0 * SPRITE);
+  } else {
+    display::draw_sprite(sx, sy + r0, SPRITE, (uint8_t)(r1 - r0 + 1), img + r0 * SPRITE);
+  }
 }
 
 void render::_frame_box(int16_t sx, int16_t sy, uint16_t col) {
@@ -305,6 +310,61 @@ void render::_frame_box(int16_t sx, int16_t sy, uint16_t col) {
   display::fill_rect(x0 + SPRITE - 1, y0, 1, SPRITE, col);
 }
 
+// 8-wind facing (0=E 1=SE 2=S 3=SW 4=W 5=NW 6=N 7=NE) onto stored art + mirror.
+// Players store N,S,E,NE,SE; zombies store N,S,E (diagonals fold onto E/W).
+const uint16_t* render::_player_img(uint8_t p, uint8_t d, bool& flip) {
+  flip = (d == 3 || d == 4 || d == 5); // SW/W/NW mirror SE/E/NE
+  const uint8_t base = (d == 3) ? 1 : (d == 4) ? 0 : (d == 5) ? 7 : d;
+  if (p == 0) {
+    switch (base) {
+      case 6: return player1_n;
+      case 2: return player1_s;
+      case 1: return player1_se;
+      case 7: return player1_ne;
+      default: return player1_e;
+    }
+  }
+  switch (base) {
+    case 6: return player2_n;
+    case 2: return player2_s;
+    case 1: return player2_se;
+    case 7: return player2_ne;
+    default: return player2_e;
+  }
+}
+
+const uint16_t* render::_zombie_img(sim::actor_kind k, uint8_t d, bool& flip) {
+  const bool west = (d == 3 || d == 4 || d == 5);
+  flip = west;
+  const bool north = (d == 6);
+  const bool south = (d == 2);
+  if (k == sim::actor_kind::runner) {
+    if (north) {
+      return zombie_runner_n;
+    }
+    if (south) {
+      return zombie_runner_s;
+    }
+    return zombie_runner_e;
+  }
+  if (k == sim::actor_kind::boss) {
+    if (north) {
+      return zombie_boss_n;
+    }
+    if (south) {
+      return zombie_boss_s;
+    }
+    return zombie_boss_e;
+  }
+  if (north) {
+    return zombie_n;
+  }
+  if (south) {
+    return zombie_s;
+  }
+  return zombie_e;
+}
+
 // flat bullets: one box per shot, nothing to ghost on erase.
 // The HUD carries no render text: game draws W/K, gun and role badge up there,
 // stats live in the panel.
@@ -312,32 +372,29 @@ void render::draw() {
   repaint_step(); // terrain first, so a cut never paints over a live sprite
 
   const sim::state& v = sim::view();
-  const uint8_t frame = (uint8_t)((millis() / 250) & 1u); // zombie walk cycle
   for (uint8_t p = 0; p < sim::NUM_PLAYERS; ++p) {
     if (!v.players[p].active) {
       continue;
     }
-    const uint16_t* img = (p == 0) ? player1 : player2;
+    bool flip = false;
+    const uint16_t* img = _player_img(p, v.players[p].facing & 7, flip);
     if (v.players[p].downed) {
       const int16_t sx = _sprite_tl((int16_t)v.players[p].x, sim::PLAYER_SIZE);
       const int16_t sy = _sprite_tl((int16_t)v.players[p].y, sim::PLAYER_SIZE);
-      _draw_actor((int16_t)v.players[p].x, (int16_t)v.players[p].y, sim::PLAYER_SIZE, img);
+      _draw_actor((int16_t)v.players[p].x, (int16_t)v.players[p].y, sim::PLAYER_SIZE, img,
+                  flip);
       _frame_box(sx, sy, colour::yellow); // body to rescue
     } else if (v.players[p].hp > 0) {
-      _draw_actor((int16_t)v.players[p].x, (int16_t)v.players[p].y, sim::PLAYER_SIZE, img);
+      _draw_actor((int16_t)v.players[p].x, (int16_t)v.players[p].y, sim::PLAYER_SIZE, img,
+                  flip);
     }
   }
   for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
     if (v.zombies[i].active) {
-      const uint16_t* img = zombie1;
-      if (v.zombies[i].kind == sim::actor_kind::runner) {
-        img = (frame == 0) ? zombie_runner1 : zombie_runner2;
-      } else if (v.zombies[i].kind == sim::actor_kind::boss) {
-        img = (frame == 0) ? zombie_boss1 : zombie_boss2;
-      } else if (frame != 0) {
-        img = zombie2;
-      }
-      _draw_actor((int16_t)v.zombies[i].x, (int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE, img);
+      bool flip = false;
+      const uint16_t* img = _zombie_img(v.zombies[i].kind, v.zombies[i].facing & 7, flip);
+      _draw_actor((int16_t)v.zombies[i].x, (int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE, img,
+                  flip);
     }
   }
   for (uint8_t i = 0; i < sim::MAX_BULLETS; ++i) {
