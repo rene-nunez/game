@@ -14,6 +14,9 @@ bool display::begin() {
   digitalWrite(TFT_BL, HIGH);
 
   _tft.setRotation(1); // landscape 320x240
+  _tft.setSwapBytes(true); // pushImage sends raw words: without the swap the
+                           // blit/erase bursts come out byte-flipped (BGR glass).
+                           // fillRect/text/drawPixel are unaffected by this flag.
   _tft.fillScreen(colour::black);
 
   return true;
