@@ -125,6 +125,15 @@ static void _erase_box(int16_t wx, int16_t wy, int16_t w, int16_t h) {
   display::push_image(sx0, sy0, bw, bh, _blit_buf);
 }
 
+// Price tags repaint only when stale: a camera cut (via repaint), a moved camera, or a
+// price-level change (buys). clear() arms the decision, draw() obeys it, so erase and
+// repaint stay paired and most frames skip both entirely (tags + prompt strip were the
+// biggest fixed per-frame cost, all of it unconditional before).
+static bool _tags_dirty = true; // repaint() sets it, draw() consumes it
+static int16_t _tags_cx = -1, _tags_cy = -1; // camera the tags were last painted for
+static uint8_t _tags_dmg = 0xFF, _tags_spd = 0xFF; // levels the tags were last painted for
+static bool _tags_armed = false; // clear() decided this frame needs erase+draw
+
 int16_t render::_cam_x = 0;
 int16_t render::_cam_y = 0;
 uint8_t render::_focus = 0;
@@ -147,6 +156,7 @@ void render::repaint() {
   // NOTE: HUD strip (0..HUD_H) belongs to game::_draw_hud (cached): a camera cut must
   // not wipe it, or the cache would skip and leave it black. Menu->playing transitions
   // force a full HUD repaint via game (which wipes + repaints all fields itself).
+  _tags_dirty = true; // the progressive repaint covers the old tags: repaint them too
   _paint_y = 0; // the arena repaint runs from here, PAINT_CHUNK rows per frame
 }
 
@@ -287,6 +297,36 @@ void render::_fill_world_box(int16_t wx, int16_t wy, uint8_t size, uint16_t col)
   }
 }
 
+// stale when the camera cut (dirty), the camera moved since the last paint, a price
+// level changed, or terrain is still rebuilding under the tags (progressive repaint
+// paints over them, so they must come back right after). Runs in clear(), at the old
+// camera, so the erase lands on last frame's pixels.
+bool render::_tags_arm() {
+  const sim::state& v = sim::view();
+  _tags_armed = _tags_dirty || _paint_y < ARENA_H || _cam_x != _tags_cx ||
+                _cam_y != _tags_cy || v.dmg_lvl != _tags_dmg || v.spd_lvl != _tags_spd;
+  return _tags_armed;
+}
+
+// draw() obeys the armed decision, but re-checks dirt/repaint first: update_camera()
+// can cut the camera (dirty + fresh repaint) after clear() already ran, and a skipped
+// erase must never strand the paint.
+bool render::_tags_fire() {
+  if (!_tags_armed) {
+    _tags_armed = _tags_dirty || _paint_y < ARENA_H;
+  }
+  if (!_tags_armed) {
+    return false;
+  }
+  _tags_dirty = false;
+  _tags_cx = _cam_x;
+  _tags_cy = _cam_y;
+  const sim::state& v = sim::view();
+  _tags_dmg = v.dmg_lvl;
+  _tags_spd = v.spd_lvl;
+  return true;
+}
+
 void render::clear() {
   const sim::state& v = sim::view();
   for (uint8_t p = 0; p < sim::NUM_PLAYERS; ++p) {
@@ -328,10 +368,17 @@ void render::clear() {
       _erase_world_rect((int16_t)v.bullets[i].x, (int16_t)v.bullets[i].y, sim::BULLET_SIZE);
     }
   }
-  _shop_labels(true); // erase last frame's price tags at the old camera
+  if (_tags_arm()) {
+    _shop_labels(true); // erase last frame's price tags, but only when stale
+  }
   // erase the prompt strip at the old camera: it is screen-fixed, so its world
-  // rect moves with the camera and a camera cut would strand it otherwise
-  _erase_world_area(_cam_x, _cam_y + ARENA_H - _prompt_h, (int16_t)display::width(), _prompt_h);
+  // rect moves with the camera and a camera cut would strand it otherwise.
+  // conditional: _prompt still holds last frame's text here (game sets the new one
+  // after the step), so no prompt + no repaint pending = nothing to clean.
+  if ((_prompt != nullptr && _prompt[0] != '\0') || _paint_y < ARENA_H) {
+    _erase_world_area(_cam_x, _cam_y + ARENA_H - _prompt_h, (int16_t)display::width(),
+                      _prompt_h);
+  }
 }
 
 // price tags over the shop machines, anchored to the world so they pan with the
@@ -593,7 +640,11 @@ void render::draw() {
                       colour::white);
     }
   }
-  _shop_labels(false);
+  // NOTE: paired with the clear() erase above via _tags_arm/_tags_fire: stale tags are
+  // erased at the old camera and repainted at the new one, fresh tags are untouched.
+  if (_tags_fire()) {
+    _shop_labels(false);
+  }
   // prompt last, on top by design: a 32px boss walking behind the bottom strip is
   // covered there (reads as "cut"). Reordering would let the sprite bleed over UI text.
   if (_prompt != nullptr && _prompt[0] != '\0') {
