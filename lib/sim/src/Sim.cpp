@@ -14,6 +14,10 @@ uint32_t sim::_bleed_acc[sim::NUM_PLAYERS] = {0, 0};
 int16_t sim::_path_tx[sim::NUM_PLAYERS] = {-1, -1};
 int16_t sim::_path_ty[sim::NUM_PLAYERS] = {-1, -1};
 uint32_t sim::_last_aim[sim::NUM_PLAYERS] = {0, 0};
+uint8_t sim::_face_want[sim::NUM_PLAYERS] = {2, 2};
+uint8_t sim::_face_cnt[sim::NUM_PLAYERS] = {0, 0};
+uint8_t sim::_zface_want[sim::MAX_ZOMBIES] = {2, 2, 2, 2, 2, 2, 2, 2};
+uint8_t sim::_zface_cnt[sim::MAX_ZOMBIES] = {0};
 sim::ctl sim::_p2ctl = {};
 
 constexpr int8_t sim::nbr_x[8];
@@ -33,6 +37,12 @@ void sim::reset() {
   _s.last_event = event::none;
   _last_shot[0] = _last_shot[1] = 0;
   _last_aim[0] = _last_aim[1] = 0;
+  _face_want[0] = _face_want[1] = 2;
+  _face_cnt[0] = _face_cnt[1] = 0;
+  for (uint8_t i = 0; i < MAX_ZOMBIES; ++i) {
+    _zface_want[i] = 2;
+    _zface_cnt[i] = 0;
+  }
   _last_damage[0] = _last_damage[1] = 0;
   _bleed_acc[0] = _bleed_acc[1] = 0;
   _p2ctl = {};
@@ -108,11 +118,20 @@ uint8_t sim::dir_of(float dx, float dy) {
   return (uint8_t)(((int)(a + 360.0f + 22.5f) / 45) & 7);
 }
 
-void sim::_face_toward(uint8_t& facing, float dx, float dy) {
-  const uint8_t want = dir_of(dx, dy);
-  const uint8_t diff = (uint8_t)((want - facing) & 7);
-  if (diff != 0 && diff != 1 && diff != 7) {
-    facing = want; // moved 2+ sectors: commit, neighbours keep the old art
+void sim::_face_toward(uint8_t& facing, uint8_t& want, uint8_t& cnt, float dx, float dy) {
+  const uint8_t sector = dir_of(dx, dy);
+  if (sector == facing) {
+    want = sector; // already there: nothing pending
+    cnt = 0;
+    return;
+  }
+  if (sector != want) {
+    want = sector; // first sighting, needs repeats to count
+    cnt = 1;
+    return;
+  }
+  if (++cnt >= FACE_FRAMES) {
+    facing = sector; // held long enough: a real turn, not border noise
   }
 }
 
@@ -143,7 +162,8 @@ bool sim::_step_zombie(uint8_t z, float ddx, float ddy, float dt) {
   if (_s.zombies[z].x == bx && _s.zombies[z].y == by) {
     return false; // walled in: keep the last facing instead of flip-flopping
   }
-  _face_toward(_s.zombies[z].facing, _s.zombies[z].x - bx, _s.zombies[z].y - by);
+  _face_toward(_s.zombies[z].facing, _zface_want[z], _zface_cnt[z], _s.zombies[z].x - bx,
+               _s.zombies[z].y - by);
   return true;
 }
 
@@ -268,6 +288,8 @@ void sim::_spawn_wave() {
         continue; // too close to a player, keep looking
       }
       _s.zombies[i] = { x, y, _zombie_hp(kind, _s.wave), true, kind, 2 };
+      _zface_want[i] = 2;
+      _zface_cnt[i] = 0;
       break;
     }
   }
@@ -442,7 +464,7 @@ bool sim::step(uint32_t now) {
       dy /= len;
     }
     if (len > 0.2f && now - _last_aim[p] > AIM_HOLD_MS) {
-      _face_toward(_s.players[p].facing, dx, dy); // neighbouring sectors keep the old art
+      _face_toward(_s.players[p].facing, _face_want[p], _face_cnt[p], dx, dy);
     }
 
     const float spd = player_speed * _spd_mult(_s.spd_lvl);

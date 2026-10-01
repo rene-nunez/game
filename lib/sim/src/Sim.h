@@ -51,9 +51,12 @@ class sim {
     // facing: 8-wind sector from dir_of(), 0=E 1=SE 2=S 3=SW 4=W 5=NW 6=N 7=NE
     // (+y is south on the glass). Render folds it onto the stored art + hflip.
     static uint8_t dir_of(float dx, float dy);
-    // hysteresis: keep the current sector unless the new one is 2+ steps away,
-    // so border jitter never flip-flops the sprite (mirrors read as blinking)
-    static void _face_toward(uint8_t& facing, float dx, float dy);
+    // facing debounce: a new sector must repeat 3 frames (~100ms) to
+    // apply, so 1-2 frame border jitter never shows (noise never sticks,
+    // real turns apply with no perceptible lag, held diagonals show)
+    static void _face_toward(uint8_t& facing, uint8_t& want, uint8_t& cnt, float dx,
+                             float dy);
+    static constexpr uint8_t FACE_FRAMES = 2; // ~66ms: noise never shows, turns feel instant
 
     struct player_state {
       float x, y;
@@ -146,6 +149,8 @@ class sim {
     static uint32_t _last_ms, _last_damage[NUM_PLAYERS], _last_shot[NUM_PLAYERS];
     static uint32_t _last_aim[NUM_PLAYERS]; // last fire time: aim holds facing briefly
     static constexpr uint32_t AIM_HOLD_MS = 500;
+    static uint8_t _face_want[NUM_PLAYERS], _face_cnt[NUM_PLAYERS]; // player debounce
+    static uint8_t _zface_want[MAX_ZOMBIES], _zface_cnt[MAX_ZOMBIES]; // zombie debounce
     static uint32_t _bleed_acc[NUM_PLAYERS]; // ms banked toward the next bleed tick
     static int16_t _path_tx[NUM_PLAYERS], _path_ty[NUM_PLAYERS];
     static ctl _p2ctl;
