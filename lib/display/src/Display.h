@@ -25,10 +25,6 @@ class display {
     static void fill_rect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color);
     static void pixel(int16_t x, int16_t y, uint16_t color);
     static void text(const char* s, int16_t x, int16_t y, uint16_t color, uint8_t size = 1, uint16_t bg = colour::black);
-    static void draw_sprite(int16_t x, int16_t y, uint8_t w, uint8_t h,
-                            const uint16_t* data); // PROGMEM RGB565, 0x0000 transparent
-    static void draw_sprite_hflip(int16_t x, int16_t y, uint8_t w, uint8_t h,
-                                  const uint16_t* data); // mirrored columns, same format
     static void push_image(int16_t x, int16_t y, int16_t w, int16_t h,
                            const uint16_t* data); // one SPI burst, RAM RGB565, no transparency
     static void backlight(bool on);

@@ -20,7 +20,7 @@ struct _bbox {
 static _bbox _bbox_cache[24];
 static uint8_t _bbox_n = 0;
 
-// bbox of img (mirrored on x when flip, matching draw_sprite_hflip). Full rect when the
+// bbox of img (mirrored on x when flip, matching the composite blit below). Full rect
 // cache overflows (never: 19 arts). Empty art (never) yields w=h=0: caller skips.
 static void _art_bbox(const uint16_t* img, uint8_t art, bool flip, uint8_t& x0, uint8_t& y0,
                       uint8_t& w, uint8_t& h) {
