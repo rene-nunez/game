@@ -34,6 +34,7 @@ void sim::reset() {
   _s.gun = weapon::pistol;
   _s.dmg_lvl = 0;
   _s.spd_lvl = 0;
+  _s.rpd_lvl = 0;
   _s.last_event = event::none;
   _last_shot[0] = _last_shot[1] = 0;
   _last_aim[0] = _last_aim[1] = 0;
@@ -354,6 +355,11 @@ float sim::_spd_mult(uint8_t lvl) {
   return 1.0f + 0.08f * (float)lvl; // +8%/level, +40% at max like the old buff
 }
 
+float sim::_rpd_mult(uint8_t lvl) {
+  const float m = 1.0f - 0.08f * (float)lvl; // -8%/level, -40% at max
+  return m < 0.5f ? 0.5f : m;
+}
+
 uint32_t sim::_fire_cd(weapon w) {
   switch (w) {
     case weapon::smg: return 180;
@@ -391,7 +397,8 @@ uint8_t sim::_fire_one(uint32_t now, float dx, float dy, uint8_t dmg, uint8_t p)
 }
 
 void sim::_do_fire(uint32_t now, uint8_t p) {
-  if (now - _last_shot[p] < _fire_cd(_s.gun)) {
+  const uint32_t cd = (uint32_t)((float)_fire_cd(_s.gun) * _rpd_mult(_s.rpd_lvl));
+  if (now - _last_shot[p] < (cd < 50 ? 50 : cd)) {
     return;
   }
 
@@ -674,6 +681,24 @@ bool sim::buy_speed(uint32_t now, uint8_t p) {
   return true;
 }
 
+bool sim::buy_rapid(uint32_t now, uint8_t p) {
+  (void)now;
+  (void)p; // levels are shared, either player may buy
+  if (_s.rpd_lvl >= MAX_LVL) {
+    _s.last_event = event::denied; // capped, like a full HP bar
+    return false;
+  }
+  const uint32_t price = price_for(PRICE_RPD, _s.rpd_lvl);
+  if (_s.points < price) {
+    _s.last_event = event::denied;
+    return false;
+  }
+  _s.points -= price;
+  ++_s.rpd_lvl; // permanent, part of the character
+  _s.last_event = event::buy_rpd;
+  return true;
+}
+
 bool sim::roll_roulette(uint32_t now, uint8_t p) {
   (void)now;
   (void)p; // the gun is shared, either player may roll
@@ -729,6 +754,7 @@ void sim::snapshot(net::game_state_msg& n) {
   n.gun = (uint8_t)_s.gun;
   n.dmg_lvl = _s.dmg_lvl;
   n.spd_lvl = _s.spd_lvl;
+  n.rpd_lvl = _s.rpd_lvl;
   n.event = (uint8_t)_s.last_event;
   for (uint8_t i = 0; i < MAX_ZOMBIES; ++i) {
     n.zombies[i].x = net::qpos(_s.zombies[i].x);
@@ -763,6 +789,7 @@ void sim::apply_snapshot(const net::game_state_msg& n) {
   _s.gun = (weapon)n.gun;
   _s.dmg_lvl = n.dmg_lvl;
   _s.spd_lvl = n.spd_lvl;
+  _s.rpd_lvl = n.rpd_lvl;
   _s.last_event = (event)n.event;
   for (uint8_t i = 0; i < MAX_ZOMBIES; ++i) {
     _s.zombies[i].x = net::uqpos(n.zombies[i].x);

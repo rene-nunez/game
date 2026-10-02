@@ -15,7 +15,7 @@ int16_t panel::_mm_cty = -1;
 // stats cache: draw() only repaints when a value changes, blips() stays per-frame
 static uint32_t _cache_points = 0xFFFFFFFF;
 static uint8_t _cache_hp0 = 0xFF, _cache_hp1 = 0xFF, _cache_bleed0 = 0xFF, _cache_bleed1 = 0xFF;
-static uint8_t _cache_dmg = 0xFF, _cache_spd = 0xFF;
+static uint8_t _cache_dmg = 0xFF, _cache_spd = 0xFF, _cache_rpd = 0xFF;
 static uint8_t _cache_p2 = 0xFF, _cache_down0 = 0xFF, _cache_down1 = 0xFF;
 
 int16_t panel::_mm_x() {
@@ -28,7 +28,7 @@ void panel::init() {
   _mm_n = 0;
   _cache_points = 0xFFFFFFFF; // force the next draw() to repaint every row
   _cache_hp0 = _cache_hp1 = _cache_bleed0 = _cache_bleed1 = 0xFF;
-  _cache_dmg = _cache_spd = _cache_p2 = _cache_down0 = _cache_down1 = 0xFF;
+  _cache_dmg = _cache_spd = _cache_rpd = _cache_p2 = _cache_down0 = _cache_down1 = 0xFF;
   display::fill_rect(0, render::ARENA_BOTTOM, (int16_t)display::width(), _panel_h, colour::black);
 
   for (uint8_t r = 0; r < tilemap::ROWS; ++r) { // minimap terrain, same-colour runs
@@ -74,8 +74,8 @@ void panel::draw() {
   if (v.points == _cache_points && v.players[0].hp == _cache_hp0 &&
       v.players[1].hp == _cache_hp1 && v.players[0].bleed == _cache_bleed0 &&
       v.players[1].bleed == _cache_bleed1 && v.dmg_lvl == _cache_dmg &&
-      v.spd_lvl == _cache_spd && p2 == _cache_p2 && down0 == _cache_down0 &&
-      down1 == _cache_down1) {
+      v.spd_lvl == _cache_spd && v.rpd_lvl == _cache_rpd && p2 == _cache_p2 &&
+      down0 == _cache_down0 && down1 == _cache_down1) {
     return;
   }
   _cache_points = v.points;
@@ -85,6 +85,7 @@ void panel::draw() {
   _cache_bleed1 = v.players[1].bleed;
   _cache_dmg = v.dmg_lvl;
   _cache_spd = v.spd_lvl;
+  _cache_rpd = v.rpd_lvl;
   _cache_p2 = p2;
   _cache_down0 = down0;
   _cache_down1 = down1;
@@ -95,10 +96,10 @@ void panel::draw() {
   snprintf(buf, sizeof(buf), "POINTS %lu", v.points);
   display::text(buf, 4, render::ARENA_BOTTOM + 4, colour::yellow, 2);
 
-  // co-op squeezes the rows (9px pitch) to fit the second HP line; solo keeps 12px
+  // co-op squeezes the rows (8px pitch) to fit H2 + the 3 buff lines; solo keeps 12px
   const int16_t hp_y = render::ARENA_BOTTOM + (p2 ? 22 : 24);
-  const int16_t pitch = p2 ? 9 : 12;
-  const int16_t tail_y = hp_y + (p2 ? 18 : 12); // DMG row (HP, [+H2,] then DMG/SPD/status)
+  const int16_t pitch = p2 ? 8 : 12;
+  const int16_t tail_y = hp_y + (p2 ? 16 : 12); // DMG row (HP, [+H2,] then DMG/SPD/RPD)
 
   auto hp_row = [&](uint8_t p, int16_t y, const char* label, uint16_t ok_col) {
     display::fill_rect(0, y, mx, 8, colour::black);
@@ -120,6 +121,8 @@ void panel::draw() {
   _pip_row(tail_y, "DMG", v.dmg_lvl, sim::MAX_LVL, colour::red);
   display::fill_rect(0, tail_y + pitch, mx, 8, colour::black);
   _pip_row(tail_y + pitch, "SPD", v.spd_lvl, sim::MAX_LVL, display::rgb565(60, 130, 230));
+  display::fill_rect(0, tail_y + 2 * pitch, mx, 8, colour::black);
+  _pip_row(tail_y + 2 * pitch, "RPD", v.rpd_lvl, sim::MAX_LVL, colour::orange);
 }
 
 void panel::_mm_restore_row(int16_t tx0, int16_t tx1, int16_t ty) {

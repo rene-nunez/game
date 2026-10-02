@@ -37,7 +37,8 @@ class sim {
       hurt,
       wave,
       over,
-      revive
+      revive,
+      buy_rpd // appended last: earlier wire values never shift
     };
 
     // shop: points are the spendable wallet. Heal is flat; damage and speed are
@@ -45,6 +46,7 @@ class sim {
     static constexpr uint32_t PRICE_HEAL = 100; // +2 HP
     static constexpr uint32_t PRICE_DMG = 150;  // damage +25%/level, base price
     static constexpr uint32_t PRICE_SPD = 120;  // speed +8%/level, base price
+    static constexpr uint32_t PRICE_RPD = 150;  // rapid -8% cooldown/level, base price
     static constexpr uint32_t PRICE_ROLL = 100; // roulette: random weapon
     static constexpr uint32_t LVL_PRICE_STEP = 200; // extra cost per level owned
 
@@ -95,6 +97,7 @@ class sim {
       weapon gun;
       uint8_t dmg_lvl; // permanent damage levels, 0..MAX_LVL
       uint8_t spd_lvl; // permanent speed levels, 0..MAX_LVL
+      uint8_t rpd_lvl; // permanent rapid levels, 0..MAX_LVL
       event last_event; // set by step() and by the buy calls below, read by game
       actor zombies[MAX_ZOMBIES];
       shot bullets[MAX_BULLETS];
@@ -120,6 +123,7 @@ class sim {
     static bool buy_heal(uint32_t now, uint8_t p = 0);
     static bool buy_damage(uint32_t now, uint8_t p = 0);
     static bool buy_speed(uint32_t now, uint8_t p = 0);
+    static bool buy_rapid(uint32_t now, uint8_t p = 0);
     static bool roll_roulette(uint32_t now, uint8_t p = 0);
 
     static uint32_t price_for(uint32_t base, uint8_t lvl); // base + STEP*lvl
@@ -168,6 +172,7 @@ class sim {
     static uint8_t _base_dmg(weapon w);
     static uint8_t _eff_dmg(uint8_t base, uint8_t lvl); // base*(1+0.25*lvl), half-up, min 1
     static float _spd_mult(uint8_t lvl);                // 1+0.08*lvl
+    static float _rpd_mult(uint8_t lvl);                // 1-0.08*lvl, min 0.5
     static uint8_t _zombie_hp(actor_kind kind, uint8_t wave); // normal 2+w/2, runner 1+w/6, boss 20+w
     static uint8_t _zombie_dmg(actor_kind kind);        // boss 2, rest 1
     static float _zombie_speed(actor_kind kind);        // 40 / 70 / 30

@@ -55,6 +55,7 @@ class game {
     static int16_t _shop_hx, _shop_hy; // heal vending centre, world px (-1 = missing)
     static int16_t _shop_dx, _shop_dy; // damage vending centre
     static int16_t _shop_sx, _shop_sy; // speed vending centre
+    static int16_t _shop_cx, _shop_cy; // rapid vending centre
     static constexpr uint8_t MAX_PADS = 6; // roulette pad slots, row-major scan order
     static int16_t _shop_rx[MAX_PADS], _shop_ry[MAX_PADS];
     static uint8_t _shop_rn; // pads found (4 on the shipped map)

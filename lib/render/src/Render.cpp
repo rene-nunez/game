@@ -131,6 +131,7 @@ static void _erase_box(int16_t wx, int16_t wy, int16_t w, int16_t h) {
 // no-op (text only ever shrinks on a buy, which always stales the erase first).
 static int16_t _tags_cx = -1, _tags_cy = -1; // camera the tags were last erased for
 static uint8_t _tags_dmg = 0xFF, _tags_spd = 0xFF; // levels the tags were last erased for
+static uint8_t _tags_rpd = 0xFF;
 static uint8_t _tags_roll = 0xFF; // active roulette pad the tags were last erased for
 // active wheel pad: row-major scan order, hash(wave) % pads. Mirrors
 // game::_roulette_active off the synced wave, so tags follow the wheel with no
@@ -147,8 +148,8 @@ static uint8_t _roll_active(uint8_t n) {
   return (uint8_t)((h >> 16u) % n);
 }
 // shop tag anchors are world-fixed (machines parse once from constexpr _art), so the
-// 60x30 scan runs once and every frame reuses the cached centres. 0=H 1=D 2=S,
-// 3..=roulette pads in row-major scan order (same order game::_scan_shops uses,
+// 60x30 scan runs once and every frame reuses the cached centres. 0=H 1=D 2=S 3=C,
+// 4..=roulette pads in row-major scan order (same order game::_scan_shops uses,
 // so the active index agrees on both sides).
 struct _tag_anchor {
   int16_t cx; // block centre, world px
@@ -156,7 +157,7 @@ struct _tag_anchor {
   bool found;
 };
 static constexpr uint8_t TAG_PADS = 6; // roulette pad anchor slots (4 on the shipped map)
-static _tag_anchor _tag_anchors[3 + TAG_PADS];
+static _tag_anchor _tag_anchors[4 + TAG_PADS];
 static bool _tag_anchors_done = false;
 
 int16_t render::_cam_x = 0;
@@ -331,7 +332,7 @@ bool render::_tags_stale() {
   // roulette pads found so far (anchors fill on first paint); the active pad rotates
   // with the wave, so a rotation must erase the old tag even if the camera sat still.
   uint8_t rn = 0;
-  for (uint8_t i = 3; i < 3 + TAG_PADS; ++i) {
+  for (uint8_t i = 4; i < 4 + TAG_PADS; ++i) {
     if (_tag_anchors_done && _tag_anchors[i].found) {
       ++rn;
     }
@@ -339,11 +340,13 @@ bool render::_tags_stale() {
   // before the first scan rn reads 0: fall back to comparing the wave itself
   const uint8_t roll = (rn > 0) ? _roll_active(rn) : v.wave;
   if (_paint_y < ARENA_H || _cam_x != _tags_cx || _cam_y != _tags_cy ||
-      v.dmg_lvl != _tags_dmg || v.spd_lvl != _tags_spd || roll != _tags_roll) {
+      v.dmg_lvl != _tags_dmg || v.spd_lvl != _tags_spd || v.rpd_lvl != _tags_rpd ||
+      roll != _tags_roll) {
     _tags_cx = _cam_x;
     _tags_cy = _cam_y;
     _tags_dmg = v.dmg_lvl;
     _tags_spd = v.spd_lvl;
+    _tags_rpd = v.rpd_lvl;
     _tags_roll = roll;
     return true;
   }
@@ -410,9 +413,9 @@ void render::clear() {
 // erase always covers the widest tag (8 chars): a buy can shrink the text and a
 // tight erase would strand the old pixels for a frame. Only the wave-active
 // roulette pad paints its tag; dead pads stay silent (game prompts ROLL MOVED).
-// Anchors are defined above (0=H 1=D 2=S, 3..=roulette pads).
+// Anchors are defined above (0=H 1=D 2=S 3=C, 4..=roulette pads).
 void render::_shop_labels(bool erase) {
-  char dmg_buf[12], spd_buf[12];
+  char dmg_buf[12], spd_buf[12], rpd_buf[12];
   const sim::state& v = sim::view();
   if (v.dmg_lvl >= sim::MAX_LVL) {
     snprintf(dmg_buf, sizeof(dmg_buf), "DMG MAX");
@@ -426,15 +429,21 @@ void render::_shop_labels(bool erase) {
     snprintf(spd_buf, sizeof(spd_buf), "SPD %lu",
              (unsigned long)sim::price_for(sim::PRICE_SPD, v.spd_lvl));
   }
-  const uint8_t want[3] = {tilemap::VENDING, tilemap::V_DMG, tilemap::V_SPD};
-  const char* text[3] = {"HEAL 100", dmg_buf, spd_buf};
-  const uint16_t col[3] = {colour::green, colour::red, colour::cyan};
+  if (v.rpd_lvl >= sim::MAX_LVL) {
+    snprintf(rpd_buf, sizeof(rpd_buf), "RPD MAX");
+  } else {
+    snprintf(rpd_buf, sizeof(rpd_buf), "RPD %lu",
+             (unsigned long)sim::price_for(sim::PRICE_RPD, v.rpd_lvl));
+  }
+  const uint8_t want[4] = {tilemap::VENDING, tilemap::V_DMG, tilemap::V_SPD, tilemap::V_RPD};
+  const char* text[4] = {"HEAL 100", dmg_buf, spd_buf, rpd_buf};
+  const uint16_t col[4] = {colour::green, colour::red, colour::cyan, colour::orange};
   if (!_tag_anchors_done) {
     _tag_anchors_done = true;
-    for (uint8_t i = 0; i < 3 + TAG_PADS; ++i) {
+    for (uint8_t i = 0; i < 4 + TAG_PADS; ++i) {
       _tag_anchors[i].found = false;
     }
-    for (uint8_t ti = 0; ti < 3; ++ti) {
+    for (uint8_t ti = 0; ti < 4; ++ti) {
       for (uint8_t r = 0; r < tilemap::ROWS && !_tag_anchors[ti].found; ++r) {
         for (uint8_t c = 0; c < tilemap::COLS; ++c) {
           if (tilemap::tiles[r][c] != want[ti]) {
@@ -467,25 +476,25 @@ void render::_shop_labels(bool erase) {
         if (r > 0 && tilemap::tiles[r - 1][c] == tilemap::ROULETTE) {
           continue;
         }
-        _tag_anchors[3 + rn].cx = (int16_t)c * tilemap::TILE + tilemap::TILE;
-        _tag_anchors[3 + rn].wy = (int16_t)r * tilemap::TILE - 10;
-        _tag_anchors[3 + rn].found = true;
+        _tag_anchors[4 + rn].cx = (int16_t)c * tilemap::TILE + tilemap::TILE;
+        _tag_anchors[4 + rn].wy = (int16_t)r * tilemap::TILE - 10;
+        _tag_anchors[4 + rn].found = true;
         ++rn;
       }
     }
   }
   uint8_t roll_n = 0;
-  for (uint8_t i = 3; i < 3 + TAG_PADS; ++i) {
+  for (uint8_t i = 4; i < 4 + TAG_PADS; ++i) {
     if (_tag_anchors[i].found) {
       ++roll_n;
     }
   }
-  const uint8_t act = (uint8_t)(3 + _roll_active(roll_n));
-  for (uint8_t ti = 0; ti < 3 + TAG_PADS; ++ti) {
+  const uint8_t act = (uint8_t)(4 + _roll_active(roll_n));
+  for (uint8_t ti = 0; ti < 4 + TAG_PADS; ++ti) {
     if (!_tag_anchors[ti].found) {
       continue;
     }
-    const bool is_roll = ti >= 3;
+    const bool is_roll = ti >= 4;
     if (erase) {
       // erase every pad (active moved => old tag must clear even off-camera logic aside)
       _erase_world_area(_tag_anchors[ti].cx - _tag_max_w / 2, _tag_anchors[ti].wy,
@@ -495,8 +504,8 @@ void render::_shop_labels(bool erase) {
     if (is_roll && ti != act) {
       continue; // dead pads stay silent
     }
-    const char* t = (ti < 3) ? text[ti] : "ROLL 100";
-    const uint16_t cc = (ti < 3) ? col[ti] : colour::yellow;
+    const char* t = (ti < 4) ? text[ti] : "ROLL 100";
+    const uint16_t cc = (ti < 4) ? col[ti] : colour::yellow;
     uint8_t len = 0;
     while (t[len] != '\0') {
       ++len;

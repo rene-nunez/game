@@ -13,8 +13,9 @@ namespace tilemap {
   constexpr uint8_t WALL = 1;   // maze wall, solid
   constexpr uint8_t VENDING = 2;// heal vending machine (2x2, green), solid, shop via INTERACT
   constexpr uint8_t ROULETTE = 3;// prize wheel (2x2), solid, roulette via INTERACT
-  constexpr uint8_t V_DMG = 4;  // damage vending machine (2x2, red), solid, shop via INTERACT
-  constexpr uint8_t V_SPD = 5;  // speed vending machine (2x2, blue), solid, shop via INTERACT
+constexpr uint8_t V_DMG = 4;  // damage vending machine (2x2, red), solid, shop via INTERACT
+constexpr uint8_t V_SPD = 5;  // speed vending machine (2x2, blue), solid, shop via INTERACT
+constexpr uint8_t V_RPD = 6;  // rapid vending machine (2x2, orange), solid, shop via INTERACT
   // NB: 'P' in _art is the player spawn; it parses straight to FLOOR.
 
   // Super-minimal grass maze: 60x30 all-meadow with a maze interconnecting
@@ -26,8 +27,8 @@ namespace tilemap {
   // on purpose, so a wall between player and machine blocks the buy.
   // 2-tile clear lanes on the ring double as the camera cut lines, so a hard cut
   // lands on open grass there; interior cuts may land on maze wall.
-  // Legend: # wall  . grass  H heal  D damage  S speed  R roulette  P spawn
-  // (V still parses as heal, for older art.)
+  // Legend: # wall  . grass  H heal  D damage  S speed  C rapid  R roulette
+  // P spawn (V still parses as heal, for older art.)
   constexpr char _art[ROWS][COLS + 1] = {
 "############################################################",
 "#..........................................................#",
@@ -41,12 +42,12 @@ namespace tilemap {
 "#..........................................................#",
 "#..........................................................#",
 "#..........................................................#",
-"#.......###..###........#####...####........#######........#",
-"#....####......#...........#................#.......RR.#...#",
-"#....#......#..#........#..#....####........######..RR.#...#",
-"#....#..#####..#........#..#.......#........#..........#...#",
-"#....#..#......#........#..........#........#..#...#####...#",
-"#.......................#####..#####...........#.....#.#...#",
+"#....######..###........#####...####........#######........#",
+"#..............#...........#................#.......RR.#...#",
+"#.......#####..#........#..#....####........######..RR.#...#",
+"#....#..#RR....#........#..#.......#........#..........#...#",
+"#....#..#RR.#..#........#..........#........#..#...#####...#",
+"#...........#...........#####..#####...........#.....#.#...#",
 "#...#########..............................#######...#.....#",
 "#..........................................................#",
 "#..........................................................#",
@@ -54,8 +55,8 @@ namespace tilemap {
 "#....########...........########...###.......########.#....#",
 "#....#..........#..........RR#...............#........#....#",
 "#....#.########.#.......##.RR#.#######.......#.########....#",
-"#....#......SS#.#.......#....................#......RR#....#",
-"#..#######..SS#.#.......#######..#####.....#######..RR#....#",
+"#....#......SS#.#.......#....................#......CC#....#",
+"#..#######..SS#.#.......#######..#####.....#######..CC#....#",
 "#..........................................................#",
 "#..........................................................#",
 "############################################################",

@@ -44,6 +44,8 @@ int16_t game::_shop_dx = -1;
 int16_t game::_shop_dy = -1;
 int16_t game::_shop_sx = -1;
 int16_t game::_shop_sy = -1;
+int16_t game::_shop_cx = -1;
+int16_t game::_shop_cy = -1;
 int16_t game::_shop_rx[MAX_PADS] = {-1, -1, -1, -1, -1, -1};
 int16_t game::_shop_ry[MAX_PADS] = {-1, -1, -1, -1, -1, -1};
 uint8_t game::_shop_rn = 0;
@@ -261,6 +263,7 @@ void game::_scan_shops() {
   _shop_hx = _shop_hy = -1;
   _shop_dx = _shop_dy = -1;
   _shop_sx = _shop_sy = -1;
+  _shop_cx = _shop_cy = -1;
   for (uint8_t i = 0; i < MAX_PADS; ++i) {
     _shop_rx[i] = _shop_ry[i] = -1;
   }
@@ -281,6 +284,7 @@ void game::_scan_shops() {
         case tilemap::VENDING: ox = &_shop_hx; oy = &_shop_hy; break;
         case tilemap::V_DMG: ox = &_shop_dx; oy = &_shop_dy; break;
         case tilemap::V_SPD: ox = &_shop_sx; oy = &_shop_sy; break;
+        case tilemap::V_RPD: ox = &_shop_cx; oy = &_shop_cy; break;
         case tilemap::ROULETTE:
           // row-major scan order defines the pad index, shared with render tags:
           // 0 = north, 1 = east, 2 = centre, 3 = SE on the shipped map
@@ -347,6 +351,8 @@ uint8_t game::_shop_at(uint8_t p) {
     return 2;
   } else if (near(_shop_sx, _shop_sy)) {
     return 3;
+  } else if (near(_shop_cx, _shop_cy)) {
+    return 5;
   } else if (_shop_rn > 0) {
     const uint8_t act = _roulette_active();
     if (act < _shop_rn && near(_shop_rx[act], _shop_ry[act])) {
@@ -434,6 +440,19 @@ void game::_shop_update(uint32_t now) {
           }
         }
         break;
+      case 5:
+        if (v.rpd_lvl >= sim::MAX_LVL) {
+          snprintf(_hint_buf, sizeof(_hint_buf), "RPD MAX");
+        } else {
+          ok = sim::buy_rapid(now);
+          if (ok) {
+            snprintf(_hint_buf, sizeof(_hint_buf), "RPD LV%u!", sim::view().rpd_lvl);
+          } else {
+            snprintf(_hint_buf, sizeof(_hint_buf), "NEED %lu",
+                     (unsigned long)sim::price_for(sim::PRICE_RPD, v.rpd_lvl));
+          }
+        }
+        break;
       default:
         ok = sim::roll_roulette(now);
         if (ok) {
@@ -466,6 +485,12 @@ void game::_shop_update(uint32_t now) {
         snprintf(_hint_buf, sizeof(_hint_buf), ok ? "P2 SPD LV%u!" : "P2 NEED %lu",
                  (unsigned)sim::view().spd_lvl,
                  (unsigned long)sim::price_for(sim::PRICE_SPD, v.spd_lvl));
+        break;
+      case 5:
+        ok = sim::buy_rapid(now, 1);
+        snprintf(_hint_buf, sizeof(_hint_buf), ok ? "P2 RPD LV%u!" : "P2 NEED %lu",
+                 (unsigned)sim::view().rpd_lvl,
+                 (unsigned long)sim::price_for(sim::PRICE_RPD, v.rpd_lvl));
         break;
       default:
         ok = sim::roll_roulette(now, 1);
@@ -533,6 +558,14 @@ void game::_shop_prompt(uint8_t shop, const char* who) {
       snprintf(_hint_buf, sizeof(_hint_buf), "%sINT: ROLL", who);
       render::prompt(_hint_buf);
       break;
+    case 5:
+      if (v.rpd_lvl >= sim::MAX_LVL) {
+        render::prompt("RPD MAX");
+      } else {
+        snprintf(_hint_buf, sizeof(_hint_buf), "%sINT: RPD LV%u", who, (unsigned)v.rpd_lvl + 1u);
+        render::prompt(_hint_buf);
+      }
+      break;
     default: render::prompt(nullptr); break;
   }
 }
@@ -566,7 +599,8 @@ void game::_fire_buzz() {
     case sim::event::shoot: buzz::play(buzz::jingle::shoot); break;
     case sim::event::buy_heal:
     case sim::event::buy_dmg:
-    case sim::event::buy_spd: buzz::play(buzz::jingle::buy); break;
+    case sim::event::buy_spd:
+    case sim::event::buy_rpd: buzz::play(buzz::jingle::buy); break;
     case sim::event::revive: buzz::play(buzz::jingle::buy); break; // a lift, not a purchase
     case sim::event::roulette: buzz::play(buzz::jingle::roulette); break;
     case sim::event::denied: buzz::play(buzz::jingle::denied); break;

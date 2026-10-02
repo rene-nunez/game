@@ -34,6 +34,9 @@ namespace tilemap {
           case 'S':
             t = V_SPD;
             break;
+          case 'C':
+            t = V_RPD;
+            break;
           case 'R':
             t = ROULETTE;
             break;
@@ -97,6 +100,8 @@ namespace tilemap {
         return display::rgb565(220, 60, 50); // damage red
       case V_SPD:
         return display::rgb565(60, 130, 230); // speed blue
+      case V_RPD:
+        return display::rgb565(235, 140, 40); // rapid orange
       case ROULETTE:
         return display::rgb565(175, 145, 75); // aged brass
       default:
@@ -135,11 +140,12 @@ namespace tilemap {
     switch (t) {
       case VENDING:
       case V_DMG:
-      case V_SPD: {
+      case V_SPD:
+      case V_RPD: {
         // 2x2 vending machine (32x32): local coords from the same-type
         // neighbours above/left, so every quadrant draws its own quarter.
-        // H green = heal, D red = damage, S blue = speed; the side panel and
-        // the colour band below the header carry the base colour.
+        // H green = heal, D red = damage, S blue = speed, C orange = rapid;
+        // the side panel and the colour band below the header carry the base.
         const int16_t gx = (tile_at(wx - TILE, wy) == t ? 16 : 0) + px;
         const int16_t gy = (tile_at(wx, wy - TILE) == t ? 16 : 0) + py;
         const bool edge_x = (gx == 0 || gx == 31);
