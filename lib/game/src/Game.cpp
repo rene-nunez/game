@@ -34,6 +34,9 @@ float game::_in_jy = 0.0f;
 uint32_t game::_in_last_ms = 0;
 volatile bool game::_rx_ready = false;
 bool game::_cli_mirror = false;
+bool game::_cli_was_down0 = false;
+bool game::_cli_was_down1 = false;
+uint8_t game::_cli_wave = 0;
 net::game_state_msg game::_rx_state;
 net::game_state_msg game::_tx_state;
 uint32_t game::_cli_last_rx = 0;
@@ -196,6 +199,8 @@ void game::_start_game(bool multi) {
   _in_jx = _in_jy = 0.0f;
   _rx_ready = false;
   _cli_mirror = false; // a fresh run owns the arena again, never the pause chrome
+  _cli_was_down0 = _cli_was_down1 = false; // no rise edge on the join frame
+  _cli_wave = 0;
   _cli_last_rx = millis(); // grace window so a fresh client is not instantly "quiet"
   _p2_interact = _p2_pause_edge = false;
   sim::reset();
@@ -384,7 +389,7 @@ bool game::_revive_update(uint32_t now) {
     }
     const uint8_t q = (p == 0) ? 1 : 0;
     if (sim::revive(q)) {
-      snprintf(_hint_buf, sizeof(_hint_buf), p == 0 ? "REVIVED!" : "P2 REVIVED!");
+      snprintf(_hint_buf, sizeof(_hint_buf), p == 0 ? "HOST REVIVED!" : "CLIENT REVIVED!");
       _hint_until = now + 1500;
       if (p == 1) {
         _p2_interact = false; // consumed: no accidental buy next frame
@@ -465,70 +470,46 @@ void game::_shop_update(uint32_t now) {
     _hint_until = now + 1500;
   }
 
-  // player 2 shops from the shared wallet on its own INTERACT edge (net, F6.3 sets it)
+  // player 2 shops from the shared wallet on its own INTERACT edge (net, F6.3 sets it).
+  // silent on the host screen: the buy runs, no P2 prompt/hint is painted here.
+  // the client paints its own proximity off the snapshot.
   if (_p2_interact && shop2 != 0) {
-    bool ok = false;
     switch (shop2) {
-      case 1:
-        ok = sim::buy_heal(now, 1);
-        snprintf(_hint_buf, sizeof(_hint_buf), ok ? "P2 HEALED" : "P2 NEED %lu",
-                 (unsigned long)sim::PRICE_HEAL);
-        break;
-      case 2:
-        ok = sim::buy_damage(now, 1);
-        snprintf(_hint_buf, sizeof(_hint_buf), ok ? "P2 DMG LV%u!" : "P2 NEED %lu",
-                 (unsigned)sim::view().dmg_lvl,
-                 (unsigned long)sim::price_for(sim::PRICE_DMG, v.dmg_lvl));
-        break;
-      case 3:
-        ok = sim::buy_speed(now, 1);
-        snprintf(_hint_buf, sizeof(_hint_buf), ok ? "P2 SPD LV%u!" : "P2 NEED %lu",
-                 (unsigned)sim::view().spd_lvl,
-                 (unsigned long)sim::price_for(sim::PRICE_SPD, v.spd_lvl));
-        break;
-      case 5:
-        ok = sim::buy_rapid(now, 1);
-        snprintf(_hint_buf, sizeof(_hint_buf), ok ? "P2 RPD LV%u!" : "P2 NEED %lu",
-                 (unsigned)sim::view().rpd_lvl,
-                 (unsigned long)sim::price_for(sim::PRICE_RPD, v.rpd_lvl));
-        break;
-      default:
-        ok = sim::roll_roulette(now, 1);
-        if (ok) {
-          snprintf(_hint_buf, sizeof(_hint_buf), "P2 GUN: %s", sim::gun_name());
-        } else {
-          snprintf(_hint_buf, sizeof(_hint_buf), "P2 NEED %lu", (unsigned long)sim::PRICE_ROLL);
-        }
-        break;
+      case 1: sim::buy_heal(now, 1); break;
+      case 2: sim::buy_damage(now, 1); break;
+      case 3: sim::buy_speed(now, 1); break;
+      case 5: sim::buy_rapid(now, 1); break;
+      default: sim::roll_roulette(now, 1); break;
     }
-    _hint_until = now + 1500;
   }
   _p2_interact = false; // consumed every frame, edge semantics
 
   if (now < _hint_until && _hint_buf[0] != '\0') {
-    render::prompt(_hint_buf); // recent result wins over the prompt
+    render::prompt(_hint_buf); // recent P1 result wins over the prompt
+    return;
+  }
+  const bool p1_down = v.players[0].active && v.players[0].downed;
+  const bool p2_down = _net_multi && v.players[1].active && v.players[1].downed;
+  if (p1_down) {
+    render::prompt("HOST DOWN"); // local body down, partner must come
     return;
   }
   if (_revive_near(0)) {
-    render::prompt("INT: REVIVE");
+    render::prompt("INT: REVIVE"); // standing close, lift with INTERACT
     return;
   }
-  if (_revive_near(1)) {
-    render::prompt("P2 INT: REVIVE");
+  if (p2_down) {
+    render::prompt("CLIENT DOWN"); // partner down across the map, go find them
     return;
   }
-  const uint8_t pshop = (shop != 0) ? shop : shop2; // P2 prompts only when P1 is away
-  if (pshop == 0) {
-    // standing on a dead wheel reads as moved, not as silence
-    const bool p1_dead = _near_inactive_roulette(0);
-    const bool p2_dead = (shop == 0 && shop2 == 0 && p2_out && _near_inactive_roulette(1));
-    if (p1_dead || p2_dead) {
+  if (shop == 0) {
+    // standing on a dead wheel reads as moved, not as silence (P1 view only)
+    if (_near_inactive_roulette(0)) {
       render::prompt("ROLL MOVED");
       return;
     }
   }
-  const char* who = (shop != 0) ? "" : "P2 ";
-  _shop_prompt(pshop, who);
+  _shop_prompt(shop, "");
 }
 
 void game::_shop_prompt(uint8_t shop, const char* who) {
@@ -835,8 +816,41 @@ void game::_update_playing_client() {
     _enter_game_over(); // host declared it, we only mirror (no SD write, see guard)
     return;
   }
-  if (_revive_near(1)) {
-    render::prompt("INT: REVIVE"); // local prompt off the snapshot, buys run on the host
+  const sim::state& cv = sim::view();
+  const bool c1_down = cv.players[0].active && cv.players[0].downed;
+  const bool c2_down = cv.players[1].active && cv.players[1].downed;
+  // revive confirmation: the hint text never travels in the snapshot, so the client
+  // derives the rise edge itself. A wave respawn also rises bodies, but that frame
+  // always carries the wave event (banner wins below), and a host restart drops the
+  // wave, so only a lone INTERACT lift lands here. The lifter is named like the host.
+  bool rev_hint = false;
+  if (cv.wave < _cli_wave) {
+    _cli_was_down0 = c1_down; // host restarted: resync, no announcement
+    _cli_was_down1 = c2_down;
+  } else if (cv.last_event != sim::event::wave) {
+    const bool p1_rose = _cli_was_down0 && !c1_down;
+    const bool p2_rose = _cli_was_down1 && !c2_down;
+    if (p1_rose != p2_rose) {
+      const uint32_t now_rx = millis();
+      snprintf(_hint_buf, sizeof(_hint_buf), p1_rose ? "CLIENT REVIVED!" : "HOST REVIVED!");
+      _hint_until = now_rx + 1500;
+      rev_hint = true; // skip proximity below: _shop_prompt reuses _hint_buf as scratch
+    }
+    _cli_was_down0 = c1_down;
+    _cli_was_down1 = c2_down;
+  } else {
+    _cli_was_down0 = c1_down;
+    _cli_was_down1 = c2_down;
+  }
+  _cli_wave = cv.wave;
+  if (rev_hint) {
+    render::prompt(_hint_buf); // lift confirmation wins over proximity
+  } else if (c2_down) {
+    render::prompt("CLIENT DOWN"); // local body down, partner must come
+  } else if (_revive_near(1)) {
+    render::prompt("INT: REVIVE"); // standing close, lift with INTERACT
+  } else if (c1_down) {
+    render::prompt("HOST DOWN"); // partner down across the map, go find them
   } else {
     const uint8_t cshop = _shop_at(1);
     if (cshop == 0 && _near_inactive_roulette(1)) {

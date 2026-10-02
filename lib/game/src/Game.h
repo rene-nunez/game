@@ -48,6 +48,8 @@ class game {
     static uint32_t _in_last_ms;   // last peer input rx time (host, stale check)
     static volatile bool _rx_ready; // snapshot waiting to apply (client)
     static bool _cli_mirror; // client is painting the host-owned pause (arena chrome is covered)
+    static bool _cli_was_down0, _cli_was_down1; // downed flags last client frame, for the rise edge
+    static uint8_t _cli_wave; // wave last client frame, restarts resync silently
     static net::game_state_msg _rx_state; // snapshot buffer (client)
     static net::game_state_msg _tx_state; // snapshot scratch (host)
     static uint32_t _cli_last_rx; // last snapshot applied (client, quiet check)
