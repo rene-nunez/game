@@ -29,6 +29,8 @@ class input {
 
     static float _jx;
     static float _jy;
+    static uint16_t _cx;
+    static uint16_t _cy;
 
     static _button _fire;
     static _button _reload;

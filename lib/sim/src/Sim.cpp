@@ -463,7 +463,9 @@ bool sim::step(uint32_t now) {
       dx /= len;
       dy /= len;
     }
-    if (len > 0.2f && now - _last_aim[p] > AIM_HOLD_MS) {
+    if (len < 0.2f) { // stick at rest: no slide, same threshold as facing
+      dx = dy = 0.0f;
+    } else if (now - _last_aim[p] > AIM_HOLD_MS) {
       _face_toward(_s.players[p].facing, _face_want[p], _face_cnt[p], dx, dy);
     }
 
