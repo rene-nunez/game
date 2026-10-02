@@ -105,7 +105,7 @@ void sim::set_p2(const ctl& c) {
 void sim::_respawn(uint8_t p) {
   _s.players[p].x = (float)tilemap::spawn_px - PLAYER_SIZE / 2.0f + (float)(p * (PLAYER_SIZE + 2));
   _s.players[p].y = (float)tilemap::spawn_py - PLAYER_SIZE / 2.0f;
-  _s.players[p].hp = PLAYER_HP_MAX;
+  _s.players[p].hp = REVIVE_HP; // wave rejoin at 1 HP, like every other comeback
   _s.players[p].downed = false;
   _s.players[p].bleed = 0;
   _s.players[p].facing = 2;

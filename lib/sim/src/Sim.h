@@ -20,7 +20,7 @@ class sim {
     static constexpr uint8_t MAX_BULLETS = 8;
     static constexpr uint8_t NUM_PLAYERS = 2;
     static constexpr uint8_t PLAYER_HP_MAX = 5; // the panel draws one pip per point
-    static constexpr uint8_t REVIVE_HP = 3;     // back on your feet, not back to full
+    static constexpr uint8_t REVIVE_HP = 1;     // back on your feet at 1 HP, heal up after
     static constexpr uint8_t BLEED_SECS = 15;   // bleed-out window before death
     static constexpr uint8_t MAX_LVL = 5;       // damage and speed cap here, pips per level
 
