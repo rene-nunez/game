@@ -389,7 +389,7 @@ bool game::_revive_update(uint32_t now) {
     }
     const uint8_t q = (p == 0) ? 1 : 0;
     if (sim::revive(q)) {
-      snprintf(_hint_buf, sizeof(_hint_buf), p == 0 ? "HOST REVIVED!" : "CLIENT REVIVED!");
+      snprintf(_hint_buf, sizeof(_hint_buf), p == 0 ? "CLIENT REVIVED!" : "HOST REVIVED!");
       _hint_until = now + 1500;
       if (p == 1) {
         _p2_interact = false; // consumed: no accidental buy next frame
@@ -822,7 +822,8 @@ void game::_update_playing_client() {
   // revive confirmation: the hint text never travels in the snapshot, so the client
   // derives the rise edge itself. A wave respawn also rises bodies, but that frame
   // always carries the wave event (banner wins below), and a host restart drops the
-  // wave, so only a lone INTERACT lift lands here. The lifter is named like the host.
+  // wave, so only a lone INTERACT lift lands here. The risen is named, matching
+  // the DOWN alerts ("HOST DOWN" -> "HOST REVIVED!").
   bool rev_hint = false;
   if (cv.wave < _cli_wave) {
     _cli_was_down0 = c1_down; // host restarted: resync, no announcement
@@ -832,7 +833,7 @@ void game::_update_playing_client() {
     const bool p2_rose = _cli_was_down1 && !c2_down;
     if (p1_rose != p2_rose) {
       const uint32_t now_rx = millis();
-      snprintf(_hint_buf, sizeof(_hint_buf), p1_rose ? "CLIENT REVIVED!" : "HOST REVIVED!");
+      snprintf(_hint_buf, sizeof(_hint_buf), p1_rose ? "HOST REVIVED!" : "CLIENT REVIVED!");
       _hint_until = now_rx + 1500;
       rev_hint = true; // skip proximity below: _shop_prompt reuses _hint_buf as scratch
     }
