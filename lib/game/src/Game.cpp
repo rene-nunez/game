@@ -44,8 +44,9 @@ int16_t game::_shop_dx = -1;
 int16_t game::_shop_dy = -1;
 int16_t game::_shop_sx = -1;
 int16_t game::_shop_sy = -1;
-int16_t game::_shop_rx = -1;
-int16_t game::_shop_ry = -1;
+int16_t game::_shop_rx[MAX_PADS] = {-1, -1, -1, -1, -1, -1};
+int16_t game::_shop_ry[MAX_PADS] = {-1, -1, -1, -1, -1, -1};
+uint8_t game::_shop_rn = 0;
 char game::_hint_buf[28] = {0};
 uint32_t game::_hint_until = 0;
 bool game::_p2_interact = false;
@@ -242,30 +243,86 @@ void game::_broadcast() {
   _handler.send(&_tx_state, sizeof(_tx_state));
 }
 
+uint8_t game::_roulette_active() {
+  if (_shop_rn == 0) {
+    return 0;
+  }
+  const uint8_t w = sim::view().wave;
+  if (w == 0) {
+    return 0;
+  }
+  // one LCG step on the synced wave: looks random per wave, yet host and client
+  // (plus late joiners) always derive the same pad with no extra net bytes
+  const uint32_t h = ((uint32_t)w * 1103515245u + 12345u) & 0x7FFFFFFFu;
+  return (uint8_t)((h >> 16u) % _shop_rn);
+}
+
 void game::_scan_shops() {
   _shop_hx = _shop_hy = -1;
   _shop_dx = _shop_dy = -1;
   _shop_sx = _shop_sy = -1;
-  _shop_rx = _shop_ry = -1;
+  for (uint8_t i = 0; i < MAX_PADS; ++i) {
+    _shop_rx[i] = _shop_ry[i] = -1;
+  }
+  _shop_rn = 0;
   for (uint8_t r = 0; r < tilemap::ROWS; ++r) {
     for (uint8_t c = 0; c < tilemap::COLS; ++c) {
       const uint8_t t = tilemap::tiles[r][c];
+      // top-left tile of the 2x2 block only, so each machine registers once
+      if (c > 0 && tilemap::tiles[r][c - 1] == t) {
+        continue;
+      }
+      if (r > 0 && tilemap::tiles[r - 1][c] == t) {
+        continue;
+      }
       int16_t* ox = nullptr;
       int16_t* oy = nullptr;
       switch (t) {
         case tilemap::VENDING: ox = &_shop_hx; oy = &_shop_hy; break;
         case tilemap::V_DMG: ox = &_shop_dx; oy = &_shop_dy; break;
         case tilemap::V_SPD: ox = &_shop_sx; oy = &_shop_sy; break;
-        case tilemap::ROULETTE: ox = &_shop_rx; oy = &_shop_ry; break;
+        case tilemap::ROULETTE:
+          // row-major scan order defines the pad index, shared with render tags:
+          // 0 = north, 1 = east, 2 = centre, 3 = SE on the shipped map
+          if (_shop_rn < MAX_PADS && _shop_rx[_shop_rn] < 0) {
+            ox = &_shop_rx[_shop_rn];
+            oy = &_shop_ry[_shop_rn];
+          }
+          break;
         default: break;
       }
       // first (top-left) tile of the 2x2 block wins, so the centre is one tile in
       if (ox != nullptr && *ox < 0) {
         *ox = (int16_t)(((uint16_t)c + 1u) * tilemap::TILE);
         *oy = (int16_t)(((uint16_t)r + 1u) * tilemap::TILE);
+        if (t == tilemap::ROULETTE) {
+          ++_shop_rn;
+        }
       }
     }
   }
+}
+
+bool game::_near_inactive_roulette(uint8_t p) {
+  const sim::state& v = sim::view();
+  if (p >= sim::NUM_PLAYERS || !v.players[p].active || _shop_rn == 0) {
+    return false;
+  }
+  const uint8_t act = _roulette_active();
+  const float pcx = v.players[p].x + sim::PLAYER_SIZE / 2.0f;
+  const float pcy = v.players[p].y + sim::PLAYER_SIZE / 2.0f;
+  const float r2 = (float)(_shop_r * _shop_r);
+  for (uint8_t i = 0; i < _shop_rn; ++i) {
+    if (i == act || _shop_rx[i] < 0) {
+      continue;
+    }
+    const float dx = pcx - (float)_shop_rx[i];
+    const float dy = pcy - (float)_shop_ry[i];
+    if (dx * dx + dy * dy <= r2) {
+      return true;
+    }
+  }
+  return false;
 }
 
 uint8_t game::_shop_at(uint8_t p) {
@@ -290,8 +347,11 @@ uint8_t game::_shop_at(uint8_t p) {
     return 2;
   } else if (near(_shop_sx, _shop_sy)) {
     return 3;
-  } else if (near(_shop_rx, _shop_ry)) {
-    return 4;
+  } else if (_shop_rn > 0) {
+    const uint8_t act = _roulette_active();
+    if (act < _shop_rn && near(_shop_rx[act], _shop_ry[act])) {
+      return 4;
+    }
   }
   return 0;
 }
@@ -433,6 +493,15 @@ void game::_shop_update(uint32_t now) {
     return;
   }
   const uint8_t pshop = (shop != 0) ? shop : shop2; // P2 prompts only when P1 is away
+  if (pshop == 0) {
+    // standing on a dead wheel reads as moved, not as silence
+    const bool p1_dead = _near_inactive_roulette(0);
+    const bool p2_dead = (shop == 0 && shop2 == 0 && p2_out && _near_inactive_roulette(1));
+    if (p1_dead || p2_dead) {
+      render::prompt("ROLL MOVED");
+      return;
+    }
+  }
   const char* who = (shop != 0) ? "" : "P2 ";
   _shop_prompt(pshop, who);
 }
@@ -673,11 +742,18 @@ void game::_update_playing_host() {
   } else {
     _shop_update(now); // INTERACT buys + prompt, before the panel paints it
   }
-  if (sim::view().last_event == sim::event::wave && _boss_alive()) {
-    // boss waves announce over the proximity prompt: buys still win, proximity waits
-    snprintf(_hint_buf, sizeof(_hint_buf), "BOSS WAVE!");
-    _hint_until = now + 2000;
-    render::prompt(_hint_buf);
+  if (sim::view().last_event == sim::event::wave) {
+    if (_boss_alive()) {
+      // boss waves announce over the proximity prompt: buys still win, proximity waits
+      snprintf(_hint_buf, sizeof(_hint_buf), "BOSS WAVE!");
+      _hint_until = now + 2000;
+      render::prompt(_hint_buf);
+    } else if (_shop_rn > 1 && now >= _hint_until) {
+      // the wheel rotated: announce it over the proximity prompt for one wave start
+      snprintf(_hint_buf, sizeof(_hint_buf), "ROLL MOVED!");
+      _hint_until = now + 2000;
+      render::prompt(_hint_buf);
+    }
   }
   _fire_buzz(); // jingle for the frame's event (revive/buys already overwrote shots)
   render::update_camera();
@@ -728,15 +804,25 @@ void game::_update_playing_client() {
   if (_revive_near(1)) {
     render::prompt("INT: REVIVE"); // local prompt off the snapshot, buys run on the host
   } else {
-    _shop_prompt(_shop_at(1), "");
+    const uint8_t cshop = _shop_at(1);
+    if (cshop == 0 && _near_inactive_roulette(1)) {
+      render::prompt("ROLL MOVED");
+    } else {
+      _shop_prompt(cshop, "");
+    }
   }
   const uint32_t cli_now = millis();
-  if (sim::view().last_event == sim::event::wave && _boss_alive()) {
-    snprintf(_hint_buf, sizeof(_hint_buf), "BOSS WAVE!"); // 2s locally, like the host hint
-    _hint_until = cli_now + 2000;
+  if (sim::view().last_event == sim::event::wave) {
+    if (_boss_alive()) {
+      snprintf(_hint_buf, sizeof(_hint_buf), "BOSS WAVE!"); // 2s locally, like the host hint
+      _hint_until = cli_now + 2000;
+    } else if (_shop_rn > 1 && cli_now >= _hint_until) {
+      snprintf(_hint_buf, sizeof(_hint_buf), "ROLL MOVED!");
+      _hint_until = cli_now + 2000;
+    }
   }
   if (cli_now < _hint_until && _hint_buf[0] != '\0') {
-    render::prompt(_hint_buf); // recent boss wave wins over the proximity prompt
+    render::prompt(_hint_buf); // recent boss/roll wave wins over the proximity prompt
   }
   _fire_buzz(); // the snapshot carries the event, so both buzzers sing
   render::update_camera();

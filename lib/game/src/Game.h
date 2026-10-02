@@ -16,7 +16,7 @@ class game {
 
   private:
     static constexpr uint32_t _frame_ms = 33; // ~30 fps
-    static constexpr int16_t _shop_r = 40;    // INTERACT reach, px from a machine centre
+    static constexpr int16_t _shop_r = 28;    // INTERACT reach, px from a machine centre
     static constexpr uint32_t _intro_ms = 2500; // logo and team screens duration, FIRE skips
     static constexpr uint32_t _wait_ms = 10000; // multiplayer peer wait, then back to mode
     static constexpr uint32_t _wait_hb_ms = 200; // heartbeat pace while waiting
@@ -55,7 +55,11 @@ class game {
     static int16_t _shop_hx, _shop_hy; // heal vending centre, world px (-1 = missing)
     static int16_t _shop_dx, _shop_dy; // damage vending centre
     static int16_t _shop_sx, _shop_sy; // speed vending centre
-    static int16_t _shop_rx, _shop_ry; // roulette centre
+    static constexpr uint8_t MAX_PADS = 6; // roulette pad slots, row-major scan order
+    static int16_t _shop_rx[MAX_PADS], _shop_ry[MAX_PADS];
+    static uint8_t _shop_rn; // pads found (4 on the shipped map)
+    static uint8_t _roulette_active(); // hash(wave) % _shop_rn, synced via sim wave
+    static bool _near_inactive_roulette(uint8_t p); // standing on a dead pad
     static char _hint_buf[28];         // transient result text ("NEED 100", "GUN: SMG")
     static uint32_t _hint_until;       // result visible while millis() < this
     static bool _p2_interact;          // player 2 INTERACT edge, set from net, consumed in shop

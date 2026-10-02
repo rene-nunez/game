@@ -289,7 +289,9 @@ int main() {
            seen.size(), walk - (int)seen.size());
     check(walk - (int)seen.size() == 0, "there are sealed walkable pockets");
 
-    int shops = 0, shops_ok = 0;
+    // per-block: wall-embedded machines are legit (corners may touch maze),
+    // what matters is each 2x2 block has reachable ground on at least one side
+    int shops = 0, blocks = 0, blocks_ok = 0;
     int heal = 0, dmg = 0, spd = 0, roll = 0;
     for (int r = 0; r < tilemap::ROWS; ++r) {
       for (int c = 0; c < tilemap::COLS; ++c) {
@@ -303,15 +305,27 @@ int main() {
         else if (t == tilemap::V_DMG) ++dmg;
         else if (t == tilemap::V_SPD) ++spd;
         else ++roll;
+        // top-left tile of the 2x2 block only, so each machine counts once
+        if (c > 0 && tilemap::tile_at((c - 1) * tilemap::TILE, r * tilemap::TILE) == t) continue;
+        if (r > 0 && tilemap::tile_at(c * tilemap::TILE, (r - 1) * tilemap::TILE) == t) continue;
+        ++blocks;
         const int dr[4] = {1, -1, 0, 0}, dc[4] = {0, 0, 1, -1};
-        for (int k = 0; k < 4; ++k)
-          if (seen.count(std::make_pair(r + dr[k], c + dc[k]))) { ++shops_ok; break; }
+        bool ok = false;
+        for (int br = r; br <= r + 1 && !ok; ++br)
+          for (int bc = c; bc <= c + 1 && !ok; ++bc)
+            for (int k = 0; k < 4 && !ok; ++k)
+              ok = seen.count(std::make_pair(br + dr[k], bc + dc[k])) > 0;
+        if (ok) {
+          ++blocks_ok;
+        } else {
+          printf("  unreachable block at col %d row %d type %d\n", c, r, t);
+        }
       }
     }
-    printf("shops %d (heal %d dmg %d spd %d roll %d), adjacent to reachable ground %d\n",
-           shops, heal, dmg, spd, roll, shops_ok);
-    check(shops == 16 && shops_ok == 16, "not every machine tile is reachable");
-    check(heal == 4 && dmg == 4 && spd == 4 && roll == 4, "each shop must be a 2x2 block");
+    printf("shops %d (heal %d dmg %d spd %d roll %d), blocks %d reachable %d\n",
+           shops, heal, dmg, spd, roll, blocks, blocks_ok);
+    check(shops == 28 && blocks == 7 && blocks_ok == 7, "not every machine block is reachable");
+    check(heal == 4 && dmg == 4 && spd == 4 && roll == 16, "shops must be 2x2 (H/D/S x1, roll x4)");
 
     int ring_open = 1;
     for (int c = 1; c < tilemap::COLS - 1; ++c) {
