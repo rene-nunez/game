@@ -253,19 +253,29 @@ void game::_broadcast() {
   _handler.send(&_tx_state, sizeof(_tx_state));
 }
 
-uint8_t game::_roulette_active() {
-  if (_shop_rn == 0) {
+uint8_t game::_roulette_active_at(uint8_t w, uint8_t n) {
+  if (n == 0 || w == 0) {
     return 0;
   }
-  const uint8_t w = sim::view().wave;
-  if (w == 0) {
-    return 0;
-  }
-  // 3-wave epochs on the synced wave: stable for waves 1-3, 4-6, ... yet host
+  // 3-wave epochs from wave 3 on: stable for waves 1-2, 3-5, 6-8, ... yet host
   // and client (plus late joiners) always derive the same pad with no extra net bytes
-  const uint32_t e = (uint32_t)(w - 1u) / 3u;
+  const uint32_t e = (uint32_t)w / 3u;
   const uint32_t h = (e * 1103515245u + 12345u) & 0x7FFFFFFFu;
-  return (uint8_t)((h >> 16u) % _shop_rn);
+  return (uint8_t)((h >> 16u) % n);
+}
+
+uint8_t game::_roulette_active() {
+  return _roulette_active_at(sim::view().wave, _shop_rn);
+}
+
+bool game::_roulette_moved() {
+  // the banner fires only on a real relocation: never on wave 1, and never when
+  // two epochs hash onto the same pad (the wheel did not move, nothing to say)
+  const uint8_t w = sim::view().wave;
+  if (w <= 1 || _shop_rn == 0) {
+    return false;
+  }
+  return _roulette_active_at(w, _shop_rn) != _roulette_active_at((uint8_t)(w - 1u), _shop_rn);
 }
 
 void game::_scan_shops() {
@@ -515,9 +525,9 @@ void game::_shop_update(uint32_t now) {
     return;
   }
   if (shop == 0) {
-    // standing on a dead wheel reads as moved, not as silence (P1 view only)
+    // standing on a dead wheel reads as off, not as silence (P1 view only)
     if (_near_inactive_roulette(0)) {
-      render::prompt("ROLL MOVED");
+      render::prompt("UNAVAILABLE");
       return;
     }
   }
@@ -775,8 +785,8 @@ void game::_update_playing_host() {
       snprintf(_hint_buf, sizeof(_hint_buf), "BOSS WAVE!");
       _hint_until = now + 2000;
       render::prompt(_hint_buf);
-    } else if (_shop_rn > 1 && now >= _hint_until) {
-      // the wheel rotated: announce it over the proximity prompt for one wave start
+    } else if (_roulette_moved() && now >= _hint_until) {
+      // the wheel really relocated: announce it over the proximity prompt once
       snprintf(_hint_buf, sizeof(_hint_buf), "ROLL MOVED!");
       _hint_until = now + 2000;
       render::prompt(_hint_buf);
@@ -874,12 +884,11 @@ void game::_update_playing_client() {
   if (edge_hint) {
     render::prompt(_hint_buf); // edge news wins over proximity
   } else if (_revive_near(1)) {
-  } else if (_revive_near(1)) {
     render::prompt("INT: REVIVE"); // standing close, lift with INTERACT
   } else {
     const uint8_t cshop = _shop_at(1);
     if (cshop == 0 && _near_inactive_roulette(1)) {
-      render::prompt("ROLL MOVED");
+      render::prompt("UNAVAILABLE");
     } else {
       _shop_prompt(cshop, "");
     }
@@ -889,7 +898,7 @@ void game::_update_playing_client() {
     if (_boss_alive()) {
       snprintf(_hint_buf, sizeof(_hint_buf), "BOSS WAVE!"); // 2s locally, like the host hint
       _hint_until = cli_now + 2000;
-    } else if (_shop_rn > 1 && cli_now >= _hint_until) {
+    } else if (_roulette_moved() && cli_now >= _hint_until) {
       snprintf(_hint_buf, sizeof(_hint_buf), "ROLL MOVED!");
       _hint_until = cli_now + 2000;
     }

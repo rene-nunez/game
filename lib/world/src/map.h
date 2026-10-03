@@ -22,7 +22,8 @@ constexpr uint8_t V_RPD = 6;  // rapid vending machine (2x2, orange), solid, sho
   // every district. Vendings sit one per district, some against maze walls, and
   // the 2x2 prize wheel rotates on 4 pads (north, east, centre, SE): only the
   // wave-active pad sells, the rest are dead furniture. Active pad is
-  // hash((wave-1)/3) % pads (3-wave epochs) in row-major scan order, derived from the synced wave,
+  // hash(wave/3) % pads (3-wave epochs from wave 3: waves 1-2, 3-5, ...) in
+  // row-major scan order, derived from the synced wave,
   // so host and client agree with no extra net bytes. INTERACT reach is short
   // on purpose, so a wall between player and machine blocks the buy.
   // 2-tile clear lanes on the ring double as the camera cut lines, so a hard cut

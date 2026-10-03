@@ -61,7 +61,9 @@ class game {
     static constexpr uint8_t MAX_PADS = 6; // roulette pad slots, row-major scan order
     static int16_t _shop_rx[MAX_PADS], _shop_ry[MAX_PADS];
     static uint8_t _shop_rn; // pads found (4 on the shipped map)
-    static uint8_t _roulette_active(); // hash((wave-1)/3) % _shop_rn, synced via sim wave
+    static uint8_t _roulette_active(); // hash(wave/3) % _shop_rn, synced via sim wave
+    static uint8_t _roulette_active_at(uint8_t w, uint8_t n); // active pad at wave w
+    static bool _roulette_moved(); // the pad really relocated this wave (banner gate)
     static bool _near_inactive_roulette(uint8_t p); // standing on a dead pad
     static char _hint_buf[28];         // transient result text ("NEED 100", "GUN: SMG")
     static uint32_t _hint_until;       // result visible while millis() < this
