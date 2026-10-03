@@ -657,6 +657,18 @@ void render::draw() {
   repaint_step(); // terrain first, so a cut never paints over a live sprite
 
   const sim::state& v = sim::view();
+  // zombies first, players on top: in contact the zombie used to cover you
+  // (the boss is 32px over your 16px), now you cover it. Erase is untouched:
+  // clear() wipes everything against the terrain before this runs.
+  for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
+    if (v.zombies[i].active) {
+      bool flip = false;
+      const uint16_t* img = _zombie_img(v.zombies[i].kind, v.zombies[i].facing & 7, flip);
+      const uint8_t art = (v.zombies[i].kind == sim::actor_kind::boss) ? BOSS_ART : SPRITE;
+      _draw_actor((int16_t)v.zombies[i].x, (int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE, art,
+                  img, flip);
+    }
+  }
   for (uint8_t p = 0; p < sim::NUM_PLAYERS; ++p) {
     if (!v.players[p].active) {
       continue;
@@ -671,15 +683,6 @@ void render::draw() {
       _frame_box(sx, sy, colour::yellow); // body to rescue
     } else if (v.players[p].hp > 0) {
       _draw_actor((int16_t)v.players[p].x, (int16_t)v.players[p].y, sim::PLAYER_SIZE, SPRITE,
-                  img, flip);
-    }
-  }
-  for (uint8_t i = 0; i < sim::MAX_ZOMBIES; ++i) {
-    if (v.zombies[i].active) {
-      bool flip = false;
-      const uint16_t* img = _zombie_img(v.zombies[i].kind, v.zombies[i].facing & 7, flip);
-      const uint8_t art = (v.zombies[i].kind == sim::actor_kind::boss) ? BOSS_ART : SPRITE;
-      _draw_actor((int16_t)v.zombies[i].x, (int16_t)v.zombies[i].y, sim::ZOMBIE_SIZE, art,
                   img, flip);
     }
   }
