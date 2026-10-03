@@ -65,6 +65,7 @@ class game {
     static bool _near_inactive_roulette(uint8_t p); // standing on a dead pad
     static char _hint_buf[28];         // transient result text ("NEED 100", "GUN: SMG")
     static uint32_t _hint_until;       // result visible while millis() < this
+    static bool _was_down0, _was_down1; // downed flags last host frame, for fall/death edges
     static bool _p2_interact;          // player 2 INTERACT edge, set from net, consumed in shop
     static bool _p2_pause_edge;        // player 2 PAUSE edge, set from net, consumed in game
 

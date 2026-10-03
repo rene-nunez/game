@@ -54,6 +54,8 @@ int16_t game::_shop_ry[MAX_PADS] = {-1, -1, -1, -1, -1, -1};
 uint8_t game::_shop_rn = 0;
 char game::_hint_buf[28] = {0};
 uint32_t game::_hint_until = 0;
+bool game::_was_down0 = false;
+bool game::_was_down1 = false;
 bool game::_p2_interact = false;
 bool game::_p2_pause_edge = false;
 
@@ -200,6 +202,7 @@ void game::_start_game(bool multi) {
   _rx_ready = false;
   _cli_mirror = false; // a fresh run owns the arena again, never the pause chrome
   _cli_was_down0 = _cli_was_down1 = false; // no rise edge on the join frame
+  _was_down0 = _was_down1 = false; // no fall/death edge on the join frame
   _cli_wave = 0;
   _cli_last_rx = millis(); // grace window so a fresh client is not instantly "quiet"
   _p2_interact = _p2_pause_edge = false;
@@ -383,6 +386,24 @@ bool game::_revive_near(uint8_t p) {
 }
 
 bool game::_revive_update(uint32_t now) {
+  const sim::state& v = sim::view();
+  const bool d0 = v.players[0].active && v.players[0].downed;
+  const bool d1 = _net_multi && v.players[1].active && v.players[1].downed;
+  // falls and bleed-outs announce once (2s): the strip frees after, the panel
+  // keeps the DOWN countdown. A lift below overwrites with REVIVED!.
+  const bool p0_fell = !_was_down0 && d0;
+  const bool p1_fell = !_was_down1 && d1;
+  const bool p0_died = _was_down0 && !d0 && v.players[0].hp == 0;
+  const bool p1_died = _was_down1 && !d1 && v.players[1].hp == 0;
+  if (p0_fell || p1_fell) {
+    snprintf(_hint_buf, sizeof(_hint_buf), p0_fell ? "HOST DOWN" : "CLIENT DOWN");
+    _hint_until = now + 2000;
+  } else if (p0_died || p1_died) {
+    snprintf(_hint_buf, sizeof(_hint_buf), p0_died ? "HOST BLED OUT" : "CLIENT BLED OUT");
+    _hint_until = now + 2000;
+  }
+  _was_down0 = d0;
+  _was_down1 = d1;
   const bool edge[2] = {input::interact_pressed(), _p2_interact};
   for (uint8_t p = 0; p < sim::NUM_PLAYERS; ++p) {
     if (!edge[p] || !_revive_near(p)) {
@@ -489,18 +510,8 @@ void game::_shop_update(uint32_t now) {
     render::prompt(_hint_buf); // recent P1 result wins over the prompt
     return;
   }
-  const bool p1_down = v.players[0].active && v.players[0].downed;
-  const bool p2_down = _net_multi && v.players[1].active && v.players[1].downed;
-  if (p1_down) {
-    render::prompt("HOST DOWN"); // local body down, partner must come
-    return;
-  }
   if (_revive_near(0)) {
     render::prompt("INT: REVIVE"); // standing close, lift with INTERACT
-    return;
-  }
-  if (p2_down) {
-    render::prompt("CLIENT DOWN"); // partner down across the map, go find them
     return;
   }
   if (shop == 0) {
@@ -820,23 +831,38 @@ void game::_update_playing_client() {
   const sim::state& cv = sim::view();
   const bool c1_down = cv.players[0].active && cv.players[0].downed;
   const bool c2_down = cv.players[1].active && cv.players[1].downed;
-  // revive confirmation: the hint text never travels in the snapshot, so the client
-  // derives the rise edge itself. A wave respawn also rises bodies, but that frame
-  // always carries the wave event (banner wins below), and a host restart drops the
-  // wave, so only a lone INTERACT lift lands here. The risen is named, matching
-  // the DOWN alerts ("HOST DOWN" -> "HOST REVIVED!").
-  bool rev_hint = false;
+  // edge news: the hint text never travels in the snapshot, so the client
+  // derives fall/lift/death edges itself. A wave respawn also moves bodies, but
+  // that frame always carries the wave event (banner wins below), and a host
+  // restart drops the wave, so only lone edges land here. Priority per frame:
+  // lift result, then the fall, then the bleed-out; ties name the local body.
+  bool edge_hint = false;
   if (cv.wave < _cli_wave) {
     _cli_was_down0 = c1_down; // host restarted: resync, no announcement
     _cli_was_down1 = c2_down;
   } else if (cv.last_event != sim::event::wave) {
-    const bool p1_rose = _cli_was_down0 && !c1_down;
-    const bool p2_rose = _cli_was_down1 && !c2_down;
-    if (p1_rose != p2_rose) {
-      const uint32_t now_rx = millis();
-      snprintf(_hint_buf, sizeof(_hint_buf), p1_rose ? "HOST REVIVED!" : "CLIENT REVIVED!");
+    // hp gate: bleeding out also clears downed (hp stays 0, dead till the wave),
+    // only a real lift comes back with hp. Without it the death reads as a revive.
+    // Falls and bleed-outs announce once (2s); the strip frees after.
+    const bool p1_rose = _cli_was_down0 && !c1_down && cv.players[0].hp > 0;
+    const bool p2_rose = _cli_was_down1 && !c2_down && cv.players[1].hp > 0;
+    const bool p1_fell = !_cli_was_down0 && c1_down;
+    const bool p2_fell = !_cli_was_down1 && c2_down;
+    const bool p1_died = _cli_was_down0 && !c1_down && cv.players[0].hp == 0;
+    const bool p2_died = _cli_was_down1 && !c2_down && cv.players[1].hp == 0;
+    const uint32_t now_rx = millis();
+    if (p2_rose || p1_rose) {
+      snprintf(_hint_buf, sizeof(_hint_buf), p2_rose ? "CLIENT REVIVED!" : "HOST REVIVED!");
       _hint_until = now_rx + 1500;
-      rev_hint = true; // skip proximity below: _shop_prompt reuses _hint_buf as scratch
+      edge_hint = true; // skip proximity below: _shop_prompt reuses _hint_buf as scratch
+    } else if (p2_fell || p1_fell) {
+      snprintf(_hint_buf, sizeof(_hint_buf), p2_fell ? "CLIENT DOWN" : "HOST DOWN");
+      _hint_until = now_rx + 2000;
+      edge_hint = true;
+    } else if (p2_died || p1_died) {
+      snprintf(_hint_buf, sizeof(_hint_buf), p2_died ? "CLIENT BLED OUT" : "HOST BLED OUT");
+      _hint_until = now_rx + 2000;
+      edge_hint = true;
     }
     _cli_was_down0 = c1_down;
     _cli_was_down1 = c2_down;
@@ -845,14 +871,11 @@ void game::_update_playing_client() {
     _cli_was_down1 = c2_down;
   }
   _cli_wave = cv.wave;
-  if (rev_hint) {
-    render::prompt(_hint_buf); // lift confirmation wins over proximity
-  } else if (c2_down) {
-    render::prompt("CLIENT DOWN"); // local body down, partner must come
+  if (edge_hint) {
+    render::prompt(_hint_buf); // edge news wins over proximity
+  } else if (_revive_near(1)) {
   } else if (_revive_near(1)) {
     render::prompt("INT: REVIVE"); // standing close, lift with INTERACT
-  } else if (c1_down) {
-    render::prompt("HOST DOWN"); // partner down across the map, go find them
   } else {
     const uint8_t cshop = _shop_at(1);
     if (cshop == 0 && _near_inactive_roulette(1)) {
