@@ -189,7 +189,10 @@ void sim::_zombie_steer(uint8_t z, float pcx, float pcy, float dt,
   const uint16_t here = f[zty][ztx];
 
   if (here == 0) {
-    return; // on the player's tile, the contact check lands the hit
+    // on the player's tile: close in on them directly. Stopping here freezes the
+    // zombie at the tile edge (up to ~22px off), a safe spot until the player moves.
+    _step_zombie(z, pcx - zcx, pcy - zcy, dt);
+    return;
   }
   if (here == tilemap::UNREACHABLE) { // walled off from the player: straight chase as a fallback
     _step_zombie(z, pcx - zcx, pcy - zcy, dt);
@@ -552,8 +555,8 @@ bool sim::step(uint32_t now) {
     if (!_s.zombies[z].active) {
       continue;
     }
-    const float zcx = _s.zombies[z].x + ZOMBIE_SIZE / 2.0f;
-    const float zcy = _s.zombies[z].y + ZOMBIE_SIZE / 2.0f;
+    float zcx = _s.zombies[z].x + ZOMBIE_SIZE / 2.0f;
+    float zcy = _s.zombies[z].y + ZOMBIE_SIZE / 2.0f;
 
     // chase the nearest alive player, down that player's field
     uint8_t tgt = 0;
@@ -571,6 +574,8 @@ bool sim::step(uint32_t now) {
       }
     }
     _zombie_steer(z, pcx[tgt], pcy[tgt], dt, (tgt == 0) ? tilemap::field : tilemap::field2);
+    zcx = _s.zombies[z].x + ZOMBIE_SIZE / 2.0f; // post-move: the contact test lands same-frame
+    zcy = _s.zombies[z].y + ZOMBIE_SIZE / 2.0f;
 
     for (uint8_t p = 0; p < NUM_PLAYERS; ++p) {
       if (!_alive(p)) {
