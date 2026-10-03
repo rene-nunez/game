@@ -258,9 +258,10 @@ uint8_t game::_roulette_active() {
   if (w == 0) {
     return 0;
   }
-  // one LCG step on the synced wave: looks random per wave, yet host and client
-  // (plus late joiners) always derive the same pad with no extra net bytes
-  const uint32_t h = ((uint32_t)w * 1103515245u + 12345u) & 0x7FFFFFFFu;
+  // 3-wave epochs on the synced wave: stable for waves 1-3, 4-6, ... yet host
+  // and client (plus late joiners) always derive the same pad with no extra net bytes
+  const uint32_t e = (uint32_t)(w - 1u) / 3u;
+  const uint32_t h = (e * 1103515245u + 12345u) & 0x7FFFFFFFu;
   return (uint8_t)((h >> 16u) % _shop_rn);
 }
 

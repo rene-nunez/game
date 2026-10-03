@@ -133,9 +133,9 @@ static int16_t _tags_cx = -1, _tags_cy = -1; // camera the tags were last erased
 static uint8_t _tags_dmg = 0xFF, _tags_spd = 0xFF; // levels the tags were last erased for
 static uint8_t _tags_rpd = 0xFF;
 static uint8_t _tags_roll = 0xFF; // active roulette pad the tags were last erased for
-// active wheel pad: row-major scan order, hash(wave) % pads. Mirrors
-// game::_roulette_active off the synced wave, so tags follow the wheel with no
-// extra net bytes.
+// active wheel pad: row-major scan order, hash((wave-1)/3) % pads (3-wave epochs).
+// Mirrors game::_roulette_active off the synced wave, so tags follow the wheel
+// with no extra net bytes.
 static uint8_t _roll_active(uint8_t n) {
   if (n == 0) {
     return 0;
@@ -144,7 +144,8 @@ static uint8_t _roll_active(uint8_t n) {
   if (w == 0) {
     return 0;
   }
-  const uint32_t h = ((uint32_t)w * 1103515245u + 12345u) & 0x7FFFFFFFu;
+  const uint32_t e = (uint32_t)(w - 1u) / 3u;
+  const uint32_t h = (e * 1103515245u + 12345u) & 0x7FFFFFFFu;
   return (uint8_t)((h >> 16u) % n);
 }
 // shop tag anchors are world-fixed (machines parse once from constexpr _art), so the

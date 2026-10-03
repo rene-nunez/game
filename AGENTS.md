@@ -51,7 +51,7 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 
 ## World / sim contracts
 
-- `_art` rows exactly `COLS` chars; map: meadow + 2-tile ring lanes, maze everywhere, 4 dispersed vendings + 4 roulette pads (casino 4-colour wheel, 1 active per wave via `hash(wave) % pads`, dead pads tagless); 1240 walkable (69%), 0 orphans, 8/8 machine blocks reachable (per-block: wall-embedded corners allowed), BFS max 76, 0 local minima (all in `run.sh`)
+- `_art` rows exactly `COLS` chars; map: meadow + 2-tile ring lanes, maze everywhere, 4 dispersed vendings + 4 roulette pads (casino 4-colour wheel, 1 active per 3-wave epoch via `hash((wave-1)/3) % pads`, dead pads tagless); 1240 walkable (69%), 0 orphans, 8/8 machine blocks reachable (per-block: wall-embedded corners allowed), BFS max 76, 0 local minima (all in `run.sh`)
 - machine sprites must read at 32px (ASCII dump of `color_at`, never by eye)
 - `tilemap::solid_rect` gates movement per axis (X then Y); bullets die on non-walkable
 - zombie spawns: random-offset scan, first walkable tile >= 100px away
@@ -62,7 +62,7 @@ Libraries resolve via LDF `chain`. Every `lib/*/src/*.cpp` compiles always; cros
 ## Shop (F1) — agreed prices/stats
 
 - vending (proximity + `INTERACT`, one machine per buff): **H heal green 100** (+2 HP), **D damage red +25%/lvl max5 base 150**, **S speed blue +8%/lvl max5 base 120**, **C rapid orange −8% cooldown/lvl max5 base 150** (min 50ms); level price = base + 200·lvl; denied/MAX hints; live price tags (`DMG 650`) float over the machines
-- roulette 100 → weighted weapon (SMG 40 / pistol 15 / shotgun 30 / rifle 15); weapons come only from roulette, never bought directly; start pistol (dmg1/cd500); SMG (dmg1/cd180); shotgun (3 pellets/cd900); rifle (dmg4/cd800); 4 pads, 1 active per wave via `hash(wave) % pads` (LCG step, host+client agree, no net bytes), dead pads prompt `ROLL MOVED`
+- roulette 100 → weighted weapon (SMG 40 / pistol 15 / shotgun 30 / rifle 15); weapons come only from roulette, never bought directly; start pistol (dmg1/cd500); SMG (dmg1/cd180); shotgun (3 pellets/cd900); rifle (dmg4/cd800); 4 pads, 1 active per 3-wave epoch via `hash((wave-1)/3) % pads` (LCG step, host+client agree, no net bytes), dead pads prompt `ROLL MOVED`
 - INTERACT reach 28px from machine centre (`_shop_r`): buys through a wall no longer register; prompts unchanged, no prices in proximity text
 - HUD shows `W+K/GUN`/badge, panel shows `POINTS` + HP/DMG/SPD/RPD pips (text, no sprites; co-op pitch 8px so H2+RPD end at 232); prompt is the arena-centred strip owned by `render`
 - zombies: total `min(wave+3,8)`; normal (spd40/hp 2+wave/2/dmg1, +10+2·wave pts, red), **runner** (spd70/hp 1+wave/6 —2 hits desde w6—/dmg1, +15+2·wave pts, orange; 0 en w1, luego `min(wave/2,total/2)`), **boss** (spd30/hp 20+wave —25 en w5, 30 en w10—/dmg2, +150+10·wave pts —200 en w5—, purple, roba slot 0 cada `wave%5==0`); `render`+`panel` colorean por `actor.kind`
