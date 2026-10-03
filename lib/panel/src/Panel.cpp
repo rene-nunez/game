@@ -210,9 +210,9 @@ void panel::blips() {
 
   const sim::state& v = sim::view();
   for (uint8_t p = 0; p < sim::NUM_PLAYERS; ++p) {
-    if (!v.players[p].active) {
-      continue;
-    }
+    if (!v.players[p].active || (v.players[p].hp == 0 && !v.players[p].downed)) {
+      continue; // inactive, or bled out (dead till the wave): no dot. Downed keeps
+    }           // its yellow dot (hp reads 0 there too, so the downed check matters).
     uint16_t col = (p == 0) ? colour::white : colour::cyan;
     if (v.players[p].downed) {
       col = colour::yellow; // body to rescue
